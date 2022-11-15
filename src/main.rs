@@ -128,10 +128,10 @@ impl<'counter> InterFace<'counter> {
         self.running = true;
         let mut stdout = stdout().into_raw_mode().expect("Could not enter raw mode");
         print!("{}", clear::All);
-        self.draw().expect("could not draw in terminal");
+        // self.draw().expect("could not draw in terminal");
         while self.running {
             match parse_terminal() {
-                Some(Key::Char('q')) => { self.running = false; println!("{}", Show) },
+                Some(Key::Char('q')) => { self.running = false; println!("{}{}", Show, clear::All) },
                 _ => {}
             }
         }

@@ -31,9 +31,10 @@ impl<I> InterFaceWindow<I> where I: InterFaceChild {
     }
     pub fn run(&self) -> std::io::Result<()> {
         if let Some(child) = &self.child {
-            let mut row_string = " ".repeat(child.size().0 as usize);
+            let mut row_string = "*".repeat(child.size().0 as usize);
             row_string.push('\n');
-            let window_string = row_string.repeat(child.size().1 as usize);
+            let mut window_string = row_string.repeat(child.size().1 as usize);
+            window_string = child.draw(window_string);
             print!("{}", window_string);
             stdout().flush()?;
             return Ok(())
@@ -56,7 +57,7 @@ pub struct InterFaceGrid<I> where I: InterFaceChild {
 }
 
 impl<I> InterFaceChild for InterFaceGrid<I> where I: InterFaceChild {
-    fn draw(&self, _: String) {
+    fn draw(&self, _: String) -> String {
         todo!()
     }
 
@@ -107,7 +108,7 @@ impl<I> InterFaceParent<I> for InterFaceGridCell<I> where I: InterFaceChild {
 
 pub struct EmptyWidget {}
 impl InterFaceChild for EmptyWidget {
-    fn draw(&self, _: String) {
+    fn draw(&self, _: String) -> String {
         todo!()
     }
 
@@ -132,15 +133,28 @@ impl<I> Frame<I> where I: InterFaceChild {
 }
 
 impl<I> InterFaceChild for Frame<I> where I: InterFaceChild {
-    fn draw(&self, interface: String) -> String {
-        match self.border {
-            Border::Full => {
-                
-            }
-            _ => {}
-        }
+    fn draw(&self, mut interface: String) -> String {
         if let Some(child) = &self.child {
             interface = child.draw(interface);
+        }
+        match self.border {
+            Border::Full => {
+                let mut interface_vec = Vec::new();
+                let mut interface_lines = interface.split('\n').to_owned().collect::<Vec<String>>();
+                interface_lines[0] = format!("┌{}┐", "─".repeat((self.size.0 - 2) as usize));
+                for line in interface_lines {
+                    interface_vec.push(line.chars().collect::<Vec<char>>())
+                }
+
+                // draw corners
+                // interface_vec[0..((self.size.0 - 1) as usize)] = '─'
+                // interface_vec[0] = '┌';
+                // interface_vec[(self.size.0 - 1) as usize] = '┐';
+                // interface_vec[((self.size.0 + 1) * (self.size.1 - 1)) as usize] = '└';
+                // interface_vec[((self.size.0 + 1) * self.size.1 - 2) as usize] = '┘';
+                // interface = interface_vec.iter().collect::<String>()
+            }
+            _ => {}
         }
         return interface
     }

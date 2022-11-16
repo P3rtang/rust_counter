@@ -126,7 +126,7 @@ impl<'counter> InterFace<'counter> {
     }
     fn start(&mut self) {
         self.running = true;
-        let mut stdout = stdout().into_raw_mode().expect("Could not enter raw mode");
+        let mut _stdout = stdout().into_raw_mode().expect("Could not enter raw mode");
         print!("{}", clear::All);
         // self.draw().expect("could not draw in terminal");
         while self.running {
@@ -171,11 +171,12 @@ fn main() {
     while interface.running {
         interface.quit();
     }
-    let mut window = InterFaceWindow::<Frame<EmptyWidget>>::new();
-    let mut frame = Frame::<EmptyWidget>::new((32, 24));
+    let mut window = Window::<Frame<EmptyWidget>>::new();
+    let mut frame = Frame::<EmptyWidget>::new((54, 24));
     frame.set_border(Border::Full);
     
     window.attach(frame).unwrap();
+    window.build();
     window.run().unwrap();
 }
 

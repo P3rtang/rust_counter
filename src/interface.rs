@@ -5,14 +5,13 @@ use std::fmt::Display;
 const EMPTY_CHAR: &str = " ";
 
 pub trait InterFaceChild {
-    fn draw(&mut self);
+    fn draw(&mut self, size: (u16, u16));
     fn size(&self) -> (u16, u16);
     fn build(&mut self, size: (u16, u16), position: (u16, u16)) -> &InterFace;
 }
 
 pub trait InterFaceParent<I> where I: InterFaceChild {
     fn attach(&mut self, widget: I) -> Result<(), ()> ;
-    fn build(&mut self); 
 }
 
 pub enum Border {
@@ -21,7 +20,6 @@ pub enum Border {
 }
 
 pub struct InterFace {
-    size: (u16, u16),
     position: (u16, u16),
     interface: Vec<Vec<char>>
 }
@@ -30,16 +28,29 @@ impl InterFace {
     fn new(position: (u16, u16), size: (u16, u16)) -> Self {
         let interface_line = vec!('\0'; size.0 as usize);
         let interface = vec!(interface_line; size.1 as usize);
-        return InterFace { size, position, interface }
+        return InterFace { position, interface }
     }
     fn insert(&mut self, position: (u16, u16), interface: &InterFace) -> Result<(), ()> {
-        let size = interface.size;
-        for y_index in 0..size.1 {
-            for x_index in 0..size.0 {
-                self.interface[(y_index + position.1) as usize][(x_index + position.0) as usize] = interface.interface[y_index as usize][x_index as usize]
+        let size = interface.size();
+        for y_index in 0..(size.1 as usize) {
+            for x_index in 0..(size.0 as usize) {
+                self.interface[y_index + position.1 as usize][x_index + position.0 as usize] = interface.interface[y_index][x_index]
             }
         }
         Ok(())
+    }
+    fn fit_size(&mut self, size: (u16, u16)) {
+        if self.size().1 > size.1 {
+            self.interface.drain((size.1 as usize)..);
+        }
+        if self.size().0 > size.0 {
+            for line_index in 0..self.interface.len() {
+                self.interface[line_index].drain((size.0 as usize)..);
+            }
+        }
+    }
+    fn size(&self) -> (u16, u16) {
+        return (self.interface[0].len() as u16, self.interface.len() as u16);
     }
 }
 
@@ -59,7 +70,7 @@ impl Display for InterFace {
 impl Default for InterFace {
     fn default() -> Self {
         let interface = vec!(vec!('\0'));
-        return InterFace { size: (1, 1), position: (0, 0), interface }
+        return InterFace { position: (0, 0), interface }
     }
 }
 
@@ -70,12 +81,12 @@ impl Default for Border {
 }
 
 // InterFaceWindow
-pub struct Window<I> where I: InterFaceChild {
-    child: Option<I>,
+pub struct Window {
+    child: Option<Box<dyn InterFaceChild>>,
     interface: InterFace,
 }
 
-impl<I> Window<I> where I: InterFaceChild {
+impl Window {
     pub fn new() -> Self {
         return Window { child: None, interface: InterFace::default() }
     }
@@ -90,20 +101,13 @@ impl<I> Window<I> where I: InterFaceChild {
         }
         return (1, 1)
     }
-}
 
-impl<I> InterFaceParent<I> for Window<I> where I: InterFaceChild {
-    fn attach(&mut self, widget: I) -> Result<(), ()> {
-        self.child = Some(widget);
-        return Ok(())
-    }
-
-    fn build(&mut self) {
+    pub fn build(&mut self) {
         let size = self.size();
         if let Some(child) = &mut self.child {
             let interface_row = vec!('\0'; child.size().0 as usize);
             let interface = vec!(interface_row; child.size().1 as usize);
-            self.interface = InterFace { size: child.size(), position: (0, 0), interface };
+            self.interface = InterFace { position: (0, 0), interface };
 
             // build child
             let child_if = child.build(size, (0, 0));
@@ -112,15 +116,29 @@ impl<I> InterFaceParent<I> for Window<I> where I: InterFaceChild {
     }
 }
 
-pub struct Grid<I> where I: InterFaceChild {
-    cells : Vec<GridCell<I>>,
+impl<I> InterFaceParent<I> for Window where I: InterFaceChild + 'static {
+    fn attach(&mut self, widget: I) -> Result<(), ()> {
+        self.child = Some(Box::new(widget));
+        return Ok(())
+    }
+}
+
+pub struct Grid {
+    cells : Vec<GridCell>,
     colums: u16,
     rows  : u16,
     interface: InterFace,
 }
 
-impl<I> InterFaceChild for Grid<I> where I: InterFaceChild {
-    fn draw(&mut self) {
+impl Grid
+{
+    pub fn new(cells: Vec<GridCell>, colums: u16, rows: u16) -> Self {
+        Self { cells, colums, rows, interface: InterFace::default() } 
+    }
+}
+
+impl InterFaceChild for Grid {
+    fn draw(&mut self, size: (u16, u16)) {
         todo!()
     }
 
@@ -141,14 +159,14 @@ impl<I> InterFaceChild for Grid<I> where I: InterFaceChild {
     }
 }
 
-struct GridCell<I> where I: InterFaceChild {
+pub struct GridCell {
     column: u16,
     row: u16,
-    child: Option<I>,
+    child: Option<Box<dyn InterFaceChild>>,
     interface: InterFace,
 }
 
-impl<I> GridCell<I> where I: InterFaceChild {
+impl GridCell {
     fn new(column: u16, row: u16) -> Self {
         return GridCell { column, row, child: None, interface: InterFace::default() }
     }
@@ -167,20 +185,16 @@ impl<I> GridCell<I> where I: InterFaceChild {
     }
 }
 
-impl<I> InterFaceParent<I> for GridCell<I> where I: InterFaceChild {
+impl<I> InterFaceParent<I> for GridCell where I: InterFaceChild + 'static {
     fn attach(&mut self, widget: I) -> Result<(), ()>  {
-        self.child = Some(widget);
+        self.child = Some(Box::new(widget));
         Ok(())
-    }
-
-    fn build(&mut self) {
-        todo!()
     }
 }
 
 pub struct EmptyWidget {}
 impl InterFaceChild for EmptyWidget {
-    fn draw(&mut self) {
+    fn draw(&mut self, size: (u16, u16)) {
         todo!()
     }
 
@@ -212,8 +226,15 @@ impl<I> Frame<I> where I: InterFaceChild {
     }
 }
 
+impl<I> InterFaceParent<I> for Frame<I> where I: InterFaceChild {
+    fn attach(&mut self, widget: I) -> Result<(), ()>  {
+        self.child = Some(widget);
+        Ok(())
+    }
+}
+
 impl<I> InterFaceChild for Frame<I> where I: InterFaceChild {
-    fn draw(&mut self) {
+    fn draw(&mut self, _: (u16, u16)) {
         let size = self.size;
         match self.border {
             Border::Full => {
@@ -244,19 +265,20 @@ impl<I> InterFaceChild for Frame<I> where I: InterFaceChild {
     fn build(&mut self, size: (u16, u16), position: (u16, u16)) -> &InterFace {
         let interface_row = vec!('\0'; self.size.0 as usize);
         let interface = vec!(interface_row; self.size.1 as usize);
-        self.interface = InterFace { size: self.size, position, interface };
-        self.draw();
+        self.interface = InterFace { position, interface };
+        self.draw(self.size);
 
         if let Some(child) = &mut self.child {
             // build child
             match self.border {
                 Border::Full => {
-                    let child_if = child.build(size, (position.0 + 1, position.1 + 1));
-                    self.interface.insert((position.0 + 1, position.1 + 1), child_if);
+                    let child_if = child.build((size.0 - 2, size.1 - 2), (position.0 + 1, position.1 + 1));
+                    // println!("{}", child_if);
+                    self.interface.insert((position.0 + 1, position.1 + 1), child_if).unwrap();
                 }
                 Border::None => {
                     let child_if = child.build(size, (position.0, position.1));
-                    self.interface.insert((0, 0), child_if);
+                    self.interface.insert((0, 0), child_if).unwrap();
                 }
             }
         }
@@ -266,11 +288,44 @@ impl<I> InterFaceChild for Frame<I> where I: InterFaceChild {
 
 pub struct Label {
     label: String,
+    interface: InterFace,
+    wrapping: bool,
+}
+
+impl Label {
+    pub fn new(label: &str) -> Self {
+        return Label { label: label.to_string(), interface: InterFace::default(), wrapping: false }
+    }
+    pub fn set_wrapping(&mut self, do_wrapping: bool) {
+        self.wrapping = do_wrapping;
+    }
 }
 
 impl InterFaceChild for Label {
-    fn draw(&mut self) {
-        todo!()
+    fn draw(&mut self, size: (u16, u16)) {
+        let mut label_vec = vec!();
+        let label_lines = self.label.split('\n').collect::<Vec<&str>>();
+        if !self.wrapping {
+            for line in label_lines {
+                label_vec.push(line.chars().collect::<Vec<char>>())
+            }
+        } else {
+            for line in label_lines {
+                if line.len() > size.0 as usize {
+                    let (l, r) = line.split_at((size.0) as usize);
+                    let (left, mut right) = (l.chars().collect::<Vec<char>>(), r.chars().collect::<Vec<char>>());
+                    if left.len() > right.len() {
+                        let mut padding: Vec<char> = vec!('\0'; left.len() - right.len());
+                        right.append(&mut padding)
+                    }
+                    label_vec.push(left);
+                    label_vec.push(right);
+                } else {
+                    label_vec.push(line.chars().collect::<Vec<char>>());
+                }
+            }
+        }
+        self.interface.interface = label_vec;
     }
 
     fn size(&self) -> (u16, u16) {
@@ -284,6 +339,9 @@ impl InterFaceChild for Label {
     }
 
     fn build(&mut self, size: (u16, u16), position: (u16, u16)) -> &InterFace {
-        todo!()
+        self.draw(size);
+        self.interface.fit_size(size);
+        self.interface.position = position;
+        return &self.interface
     }
 }

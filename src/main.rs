@@ -1,9 +1,11 @@
 #![allow(dead_code)]
+use std::time::SystemTime;
 use std::fmt;
 use serde_derive::{Serialize, Deserialize};
 use std::{fs::OpenOptions, io};
 use io::{Write, Result, Read, stdout, stdin};
 use termion::{raw::IntoRawMode, event::{Key, Event}, input::TermRead, clear, cursor::{Goto, Hide, Show}};
+
 
 mod interface;
 use interface::*;
@@ -154,30 +156,27 @@ fn parse_terminal() -> Option<Key> {
 }
 
 fn main() {
-    let mut interface: InterFace;
-
-    if let Ok(interf) = InterFace::load() {
-        interface = interf;
-        interface.start();
-    } else {
-        println!("issue found with data.json file could not read save data");
-        let mut store = CounterStore::new();
-        let names = ["foo", "baz", "bar"];
-        for name in names {
-            store.push(Counter::new(name))
-        }
-        interface = InterFace { counter_store: Box::new(store), running: true, state: Vec::new() };
-    }
-    while interface.running {
-        interface.quit();
-    }
-    let mut window = Window::<Frame<EmptyWidget>>::new();
-    let mut frame = Frame::<EmptyWidget>::new((54, 24));
+    let mut window: Window = Window::new();
+    let mut frame = Frame::<Grid>::new((72, 24));
+    let grid = Grid::new(vec!(), 2, 1);
+    let text = "testing...".repeat(10);
+    let mut label = Label::new(&text);
     frame.set_border(Border::Full);
+    label.set_wrapping(true);
     
+    frame.attach(grid).unwrap();
     window.attach(frame).unwrap();
     window.build();
     window.run().unwrap();
+}
+
+fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {
+  let start = SystemTime::now();
+  let result = f();
+  let end = SystemTime::now();
+  let duration = end.duration_since(start).unwrap();
+  println!("took {} microseconds", duration.as_micros());
+  result
 }
 
 #[cfg(test)]

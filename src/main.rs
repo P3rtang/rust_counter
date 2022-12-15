@@ -5,6 +5,7 @@ use serde_derive::{Serialize, Deserialize};
 use std::{fs::OpenOptions, io};
 use io::{Write, Result, Read, stdout, stdin};
 use termion::{raw::IntoRawMode, event::{Key, Event}, input::TermRead, clear, cursor::{Goto, Hide, Show}};
+use std::rc::Rc;
 
 
 mod interface;
@@ -156,27 +157,27 @@ fn parse_terminal() -> Option<Key> {
 }
 
 fn main() {
-    let mut window: Window = Window::new();
-    let mut frame = Frame::<Grid>::new((72, 24));
-    let grid = Grid::new(vec!(), 2, 1);
-    let text = "testing...".repeat(10);
-    let mut label = Label::new(&text);
-    frame.set_border(Border::Full);
-    label.set_wrapping(true);
+    use interface::*;
+    let relation = Rc::new(ProgramRelations::new());
+
+    let label = Label::new(&"testing...".repeat(10), relation.clone());
+    let mut frame  = Frame::new  (76, 22, relation.clone());
+    let mut window = Window::new (80, 24, relation.clone());
+
+    frame.fit_child(true);
+    frame.child(label);
+    window.child(frame);
     
-    frame.attach(grid).unwrap();
-    window.attach(frame).unwrap();
-    window.build();
-    window.run().unwrap();
+    window.present();
 }
 
 fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {
-  let start = SystemTime::now();
-  let result = f();
-  let end = SystemTime::now();
-  let duration = end.duration_since(start).unwrap();
-  println!("took {} microseconds", duration.as_micros());
-  result
+    let start = SystemTime::now();
+    let result = f();
+    let end = SystemTime::now();
+    let duration = end.duration_since(start).unwrap();
+    println!("took {} microseconds", duration.as_micros());
+    result
 }
 
 #[cfg(test)]

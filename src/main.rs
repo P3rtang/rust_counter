@@ -6,6 +6,7 @@ use std::{fs::OpenOptions, io};
 use io::{Write, Result, Read, stdout, stdin};
 use termion::{raw::IntoRawMode, event::{Key, Event}, input::TermRead, clear, cursor::{Goto, Hide, Show}};
 use std::rc::Rc;
+use std::cell::RefCell;
 
 
 mod interface;
@@ -158,17 +159,15 @@ fn parse_terminal() -> Option<Key> {
 
 fn main() {
     use interface::*;
-    let relation = Rc::new(ProgramRelations::new());
+    let relation = Rc::new(RefCell::new(ProgramIds::new()));
+    let mut interface = InterFace::new(80, 24);
 
-    let label = Label::new(&"testing...".repeat(10), relation.clone());
-    let mut frame  = Frame::new  (76, 22, relation.clone());
-    let mut window = Window::new (80, 24, relation.clone());
+    let label = Label::new(&"testing...".repeat(10)
+                           , relation.clone());
+    let frame  = Frame::new  (76, 22, relation.clone());
+    let window = Window::new (80, 24, relation.clone());
 
-    frame.fit_child(true);
-    frame.child(label);
-    window.child(frame);
-    
-    window.present();
+    relation.borrow_mut().get_by_id(window).draw(&mut interface);
 }
 
 fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {

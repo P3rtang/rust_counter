@@ -3,6 +3,7 @@ use core::str::Chars;
 use std::fmt::Display;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 const TEST_CHAR: char = '*';
 
@@ -11,6 +12,7 @@ pub trait Widget {
     fn set_position(&mut self, _: Position);
     fn set_size(&mut self, _: WidgetSize);
     fn get_size(&self) -> &WidgetSize;
+    fn is_root(&self) -> bool;
 }
 
 pub trait Container {
@@ -31,7 +33,7 @@ pub struct InterFace {
 }
 
 impl InterFace {
-    fn new(height: usize, width: usize) -> Self {
+    pub fn new(height: usize, width: usize) -> Self {
         return Self { width, height, window: vec!(TEST_CHAR; height * width) }
     }
     fn insert_chars(&mut self, chars: &mut Chars, range: Vec<usize>) {
@@ -77,7 +79,9 @@ impl Display for InterFace {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut string = String::new();
         for line in self.window.chunks(self.width) {
-            string.push_str(&line.into_iter().map(|charr| if charr == &'\0' {return &' '} else {return charr}).collect::<String>());
+            string.push_str(&line.into_iter()
+                            .map(|charr| if charr == &'\0' {return &' '} else {return charr})
+                            .collect::<String>());
             string.push('\n')
         }
         write!(f, "{}", string)
@@ -135,31 +139,43 @@ impl WidgetSize {
     }
 }
 
-pub struct WidgetRelation {
-    parent: &'static dyn Widget,
-    child:  Option<&'static dyn Widget>,
-}
 
 pub struct Window {
+    id:        u16,
     width:     usize,
     height:    usize,
     border:    Border,
-    relation:  Rc<ProgramRelations>,
-    interface: InterFace,
+    relation:  Rc<RefCell<ProgramIds>>,
 }
 
 impl Window {
-    pub fn new(width: usize, height: usize, relation: Rc<ProgramRelations>) -> Box<Self> {
-        return Box::new( Self { height, width, border: Border::None, relation, interface: InterFace::new(height, width) } )
+    pub fn new(width: usize, height: usize, relation: Rc<RefCell<ProgramIds>>) -> u16 {
+        let id = relation.borrow().get_new_id();
+        let window = Box::new( Self { id, height, width, border: Border::None, relation: relation.clone() } );
+        relation.borrow_mut().add_widget(id, window);
+        return id
     }
-    fn draw(&mut self) -> String {
-        if self.has_child() {
-            self.get_child().draw(&mut self.interface);
-        }
-        return self.interface.to_string();
+}
+
+impl Widget for Window {
+    fn draw(&self, interface: &mut InterFace) {
+        if self.has_child() {}
+        println!("{}", interface)
     }
-    pub fn present(&mut self) {
-        println!("{}", self.draw());
+
+    fn set_position(&mut self, _: Position) {
+        todo!()
+    }
+
+    fn set_size(&mut self, _: WidgetSize) {
+        todo!()
+    }
+
+    fn get_size(&self) -> &WidgetSize {
+        todo!()
+    }
+    fn is_root(&self) -> bool {
+        return true
     }
 }
 
@@ -172,7 +188,7 @@ impl Container for Window {
     fn get_child(&self) -> &mut dyn Widget {
         todo!()
     }
-    fn has_child(&self) -> bool { todo!() }
+    fn has_child(&self) -> bool { self.relation.borrow().has_child(self.id) }
 }
 
 impl Bordered for Window {
@@ -181,7 +197,7 @@ impl Bordered for Window {
 
 pub struct Label {
     parent_id: u32,
-    relation:  Rc<ProgramRelations>,
+    relation:  Rc<RefCell<ProgramIds>>,
     text:      String,
     size:      WidgetSize,
     position:  Position,
@@ -189,7 +205,7 @@ pub struct Label {
 }
 
 impl Label {
-    pub fn new(text: &str, relation: Rc<ProgramRelations>) -> Box<Self> {
+    pub fn new(text: &str, relation: Rc<RefCell<ProgramIds>>) -> Box<Self> {
         return Box::new( Self { parent_id: 0, relation, text: text.to_string(), size: WidgetSize { width: text.len(), height: 1 }, position: Position::default(), wrapping: true } )
     }
 }
@@ -203,11 +219,12 @@ impl Widget for Label {
     fn set_position(&mut self, position: Position) { self.position = position }
     fn get_size(&self) -> &WidgetSize { &self.size }
     fn set_size(&mut self, size: WidgetSize) { self.size = size }
+    fn is_root(&self) -> bool { false }
 }
 
 pub struct Frame {
     parent_id: u32,
-    relation:  Rc<ProgramRelations>,
+    relation:  Rc<RefCell<ProgramIds>>,
     size:      WidgetSize,
     position:  Position,
     border:    Border,
@@ -215,7 +232,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(width: usize, height: usize, relation: Rc<ProgramRelations>) -> Box<Self> {
+    pub fn new(width: usize, height: usize, relation: Rc<RefCell<ProgramIds>>) -> Box<Self> {
         return Box::new(Self { parent_id: 0, relation, size: WidgetSize { width, height }, position: Position::default(), border: Border::Full, fit_child: true })
     }
 }
@@ -235,6 +252,7 @@ impl Widget for Frame {
     }
     fn get_size(&self) -> &WidgetSize { &self.size }
     fn set_size(&mut self, size: WidgetSize) { self.size = size }
+    fn is_root(&self) -> bool { false }
 }
 
 impl Container for Frame {
@@ -268,20 +286,31 @@ fn get_sized_range(position: &Position, size: &WidgetSize, interface_width: usiz
     return range
 }
 
-pub struct ProgramRelations {
+pub struct ProgramIds {
+    // TODO: add refcell around widget so it can be mutably passed around
     widgets: HashMap<u16, Box<dyn Widget>>,
+    relations: HashMap<u16, Vec<u16>>,
 }
 
-impl ProgramRelations {
+impl ProgramIds {
     pub fn new() -> Self {
-        return Self { widgets: HashMap::new() }
+        return Self { widgets: HashMap::new(), relations: HashMap::new() }
     }
-    fn add_widget(&mut self, widget: Box<dyn Widget>) -> u16 {
-        let id = self.widgets.keys().max().unwrap() + 1;
+    pub fn get_new_id(&self) -> u16 {
+        let id = self.widgets.keys().max().unwrap_or(&0) + 1;
+        return id
+    }
+    pub fn add_widget(&mut self, id: u16, widget: Box<dyn Widget>) -> u16 {
         self.widgets.insert(id, widget);
         return id
     }
-    fn get_by_id(&self) {
-        todo!()
+    pub fn get_by_id(&mut self, id: u16) -> &mut Box<dyn Widget> {
+        return self.widgets.get_mut(&id).unwrap()
+    }
+    pub fn get_child(&mut self, id: u16) -> Vec<u16> {
+        self.relations.get(&id).unwrap().to_vec()
+    }
+    pub fn has_child(&self, id: u16) -> bool {
+        return !self.relations.get(&id).unwrap().is_empty()
     }
 }

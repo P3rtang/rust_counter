@@ -1,8 +1,7 @@
 use std::{io, time::{Instant, Duration}};
 use tui::{
-    text::{Text},
     backend::CrosstermBackend,
-    widgets::{ListState, Paragraph},
+    widgets::ListState,
     Terminal
 };
 use crossterm::{
@@ -13,10 +12,19 @@ use crossterm::{
 use crate::counter::{Counter, CounterStore};
 use crate::ui;
 
+#[derive(Clone, PartialEq)]
+pub enum AppState {
+    Selection,
+    Counting,
+    AddingNew,
+}
+
 pub struct App {
     tick_rate: Duration,
     c_store: CounterStore,
     c_state: ListState,
+    dialog_state: DialogState,
+    app_state: AppState,
 }
 
 impl App {
@@ -24,7 +32,9 @@ impl App {
         return App { 
             tick_rate: Duration::from_millis(tick_rate),
             c_store: counter_store,
-            c_state: ListState::default() 
+            c_state: ListState::default(),
+            dialog_state: DialogState::default(),
+            app_state: AppState::Selection,
         }
     }
     pub fn start(&mut self) -> io::Result<()> {
@@ -44,40 +54,54 @@ impl App {
 
         loop {
             terminal.draw(|f| {
-                ui::draw(f, &self.c_store, &mut self.c_state);
+                ui::draw(f, &self.c_store, &mut self.c_state, self.app_state.clone());
             })?;
 
             let len = self.c_store.len();
             
             if crossterm::event::poll(timeout).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
-                    match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Char('n') => { 
-                            self.c_store.push(Counter::new("new_counter"));
+                    match self.app_state {
+                        AppState::Selection => {
+                            match key.code {
+                                KeyCode::Char('q') => return Ok(()),
+                                KeyCode::Char('n') => { 
+                                    self.app_state = AppState::AddingNew;
+                                    self.c_store.push(Counter::new("new_counter"));
+                                }
+                                KeyCode::Char('d') => {
+                                    self.c_store.remove(self.c_state.selected().unwrap());
+                                }
+                                KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
+                                    self.get_counter().increase_by(1);
+                                }
+                                KeyCode::Char('-') => {
+                                    self.get_counter().increase_by(-1);
+                                }
+                                KeyCode::Up => {
+                                    let mut selected = self.c_state.selected().unwrap();
+                                    selected += len - 1;
+                                    selected %= len;
+                                    self.c_state.select(Some(selected as usize));
+                                }
+                                KeyCode::Down => {
+                                    let mut selected = self.c_state.selected().unwrap();
+                                    selected += 1;
+                                    selected %= len;
+                                    self.c_state.select(Some(selected as usize));
+                                }
+                                KeyCode::Enter => {}
+                                _ => {}
+                            }
                         }
-                        KeyCode::Char('d') => {
-                            self.c_store.remove(self.c_state.selected().unwrap());
+                        AppState::AddingNew => {
+                            match key.code {
+                                KeyCode::Char(charr) if charr.is_alphanumeric() => {
+
+                                }
+                                _ => {}
+                            }
                         }
-                        KeyCode::Char('=') => {
-                            self.get_counter().increase_by(1);
-                        }
-                        KeyCode::Char('-') => {
-                            self.get_counter().increase_by(-1);
-                        }
-                        KeyCode::Up => {
-                            let mut selected = self.c_state.selected().unwrap();
-                            selected += len - 1;
-                            selected %= len;
-                            self.c_state.select(Some(selected as usize));
-                        }
-                        KeyCode::Down => {
-                            let mut selected = self.c_state.selected().unwrap();
-                            selected += 1;
-                            selected %= len;
-                            self.c_state.select(Some(selected as usize));
-                        }
-                        KeyCode::Enter => {}
                         _ => {}
                     }
                 }

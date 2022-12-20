@@ -4,6 +4,7 @@ use std::time::SystemTime;
 mod counter;
 mod app;
 mod ui;
+mod entry;
 
 const SAVE_FILE: &str = "data.json";
 

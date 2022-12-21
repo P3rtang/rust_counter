@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::fmt;
+use std::ops::Index;
 use serde_derive::{Serialize, Deserialize};
 use std::io::{Result, Write};
 use std::fs::File;
@@ -13,7 +14,7 @@ pub struct Counter {
 
 impl Counter {
     pub fn new(name: &str) -> Self {
-        return Counter { name: name.to_string() , count: 1, active: false }
+        return Counter { name: name.to_string() , count: 0, active: false }
     }
     pub fn set_count(&mut self, count: i32)  {
         self.count = count
@@ -82,7 +83,9 @@ impl CounterStore {
         return self.store.clone()
     }
     pub fn remove(&mut self, id: usize) {
-        self.store.remove(id);
+        if (0..self.store.len()).contains(&id) {
+            self.store.remove(id);
+        }
     }
 }
 

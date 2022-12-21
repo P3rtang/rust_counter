@@ -11,6 +11,7 @@ use crossterm::{
 };
 use crate::counter::{Counter, CounterStore};
 use crate::ui;
+use crate::entry::{Entry, EntryState};
 
 #[derive(Clone, PartialEq)]
 pub enum AppState {
@@ -23,8 +24,9 @@ pub struct App {
     tick_rate: Duration,
     c_store: CounterStore,
     c_state: ListState,
-    dialog_state: DialogState,
+    entry_state: EntryState,
     app_state: AppState,
+    cursor_pos: Option<(u16, u16)>,
 }
 
 impl App {
@@ -33,8 +35,9 @@ impl App {
             tick_rate: Duration::from_millis(tick_rate),
             c_store: counter_store,
             c_state: ListState::default(),
-            dialog_state: DialogState::default(),
+            entry_state: EntryState::default(),
             app_state: AppState::Selection,
+            cursor_pos: None,
         }
     }
     pub fn start(&mut self) -> io::Result<()> {
@@ -54,8 +57,12 @@ impl App {
 
         loop {
             terminal.draw(|f| {
-                ui::draw(f, &self.c_store, &mut self.c_state, self.app_state.clone());
+                ui::draw(f, &self.c_store, &mut self.c_state, self.app_state.clone(), &mut self.entry_state);
             })?;
+
+            if let Some(pos) = self.cursor_pos {
+                terminal.set_cursor(pos.0, pos.1).unwrap();
+            }
 
             let len = self.c_store.len();
             
@@ -67,10 +74,9 @@ impl App {
                                 KeyCode::Char('q') => return Ok(()),
                                 KeyCode::Char('n') => { 
                                     self.app_state = AppState::AddingNew;
-                                    self.c_store.push(Counter::new("new_counter"));
                                 }
                                 KeyCode::Char('d') => {
-                                    self.c_store.remove(self.c_state.selected().unwrap());
+                                    self.c_store.remove(self.c_state.selected().unwrap_or(0));
                                 }
                                 KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
                                     self.get_counter().increase_by(1);
@@ -96,9 +102,17 @@ impl App {
                         }
                         AppState::AddingNew => {
                             match key.code {
-                                KeyCode::Char(charr) if charr.is_alphanumeric() => {
-
+                                KeyCode::Esc => { 
+                                    self.app_state = AppState::Selection;
+                                    self.entry_state = EntryState::default();
                                 }
+                                KeyCode::Enter => { 
+                                    self.c_store.push(Counter::new(&self.entry_state.get_field()));
+                                    self.entry_state = EntryState::default();
+                                    self.app_state = AppState::Selection;
+                                }
+                                KeyCode::Char(charr) if charr.is_alphanumeric() => { self.entry_state.push(charr) }
+                                KeyCode::Backspace => { self.entry_state.pop() }
                                 _ => {}
                             }
                         }

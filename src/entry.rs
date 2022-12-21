@@ -1,46 +1,142 @@
 use tui::style::Style;
 use tui::widgets::{Widget, StatefulWidget};
-
+use tui::layout::Rect;
 
 pub struct EntryState {
     field: String,
+    cursor_pos: Option<(u16, u16)>,
 }
 
-struct Entry<'a> {
-    block: Option<Block<'a>>,
-    state: EntryState,
-    style: Style,
-    start_corner: Corner,
+impl EntryState {
+    pub fn default() -> Self {
+        return EntryState { field: "".to_string(), cursor_pos: Some((0, 0)) }
+    }
+    pub fn push(&mut self, charr: char) {
+        self.field.push(charr);
+    }
+    pub fn get_field(&self) -> String {
+        return self.field.clone()
+    }
+
+    pub fn pop(&mut self) {
+        self.field.pop();
+    }
+
+    pub fn show_cursor(mut self) -> Self {
+        self.cursor_pos = Some((0, 0));
+        self
+    }
+
+    pub fn hide_cursor(mut self) -> Self {
+        self.cursor_pos = Some((0, 0));
+        self
+    }
+
+    pub fn get_cursor(&self) -> Option<(u16, u16)> {
+        return self.cursor_pos
+    }
+}
+
+pub struct Entry<'a> {
+    block:       Option<Block<'a>>,
+    title:       String,
+    field_width: u16,
+    style:       Style,
+    field_style: Style,
 }
 
 impl<'a> Entry<'a> {
-    pub fn block(mut self, block: Block<'a>) -> Entry<'a> {
+    pub fn default() -> Self {
+        return Entry {
+            block:       Some(Block::default()),
+            title:       "".to_string(),
+            field_width: 10,
+            style:       Style::default(),
+            field_style: Style::default(),
+        }
+    }
+    pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);
         self
     }
 
-    pub fn style(mut self, style: Style) -> Entry<'a> {
+    pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
     }
 
+    pub fn field_width(mut self, width: u16) -> Self {
+        self.field_width = width;
+        self
+    }
+
+    pub fn field_style(mut self, style: Style) -> Self {
+        self.field_style = style;
+        self
+    }
+
+    pub fn title(mut self, title: &str) -> Self {
+        self.title = title.to_string();
+        self
+    }
 }
 
 impl<'a> StatefulWidget for Entry<'a> {
     type State = EntryState;
 
-    fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer, state: &mut Self::State) {
-        todo!()
+    fn render(mut self, area: Rect, buf: &mut tui::buffer::Buffer, state: &mut Self::State) {
+        buf.set_style(area, self.style);
+        let widget_area = match self.block {
+            Some(b) => {
+                let inner_area = b.inner(area);
+                b.render(area, buf);
+                inner_area
+            }
+            None => area,
+        };
+
+        if state.field.len() + 2 > self.field_width as usize {
+            self.field_width = state.field.len() as u16 + 2
+        }
+
+        let mut entry_area = Rect::default();
+        if widget_area.width > self.field_width && widget_area.height > 3 {
+            entry_area = Rect{ x: (widget_area.width - self.field_width) / 2 + widget_area.x, y: widget_area.height / 2 + widget_area.y, width: self.field_width, height: 1 };
+        }
+
+        buf.set_style(entry_area, self.field_style);
+
+        let widget_empty = Text::raw(" ".repeat(widget_area.width as usize));
+        for i in 0..widget_area.height {
+            buf.set_spans(widget_area.x, widget_area.y + i as u16, &widget_empty.lines[0], widget_area.width);
+        }
+
+        let title = Text::raw(self.title);
+        for line in title.lines {
+            buf.set_spans((widget_area.width - line.width() as u16) / 2 + widget_area.x, widget_area.height / 2 + widget_area.y - 2, &line, widget_area.width);
+        }
+
+        let mut padded_field = state.get_field();
+        padded_field.push_str(&"_".repeat(self.field_width as usize - state.field.len()));
+        let line = Text::raw(&padded_field);
+        for line in line.lines {
+            buf.set_spans(entry_area.x, entry_area.y, &line, widget_area.width);
+        }
+
+        if state.get_cursor().is_some() {
+            state.cursor_pos = Some((entry_area.x + state.field.len() as u16, entry_area.y));
+        }
     }
 }
 
 impl<'a> Widget for Entry<'a> {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        todo!()
+        let mut state = EntryState::default();
+        StatefulWidget::render(self, area, buf, &mut state)
     }
 }
 
-use tui::{buffer::Buffer, layout::{Corner, Rect}, widgets::Block, text::Text};
+use tui::{buffer::Buffer, layout::Corner, widgets::Block, text::Text};
 
 #[derive(Debug, Clone, Default)]
 pub struct ListState {
@@ -229,7 +325,7 @@ impl<'a> StatefulWidget for List<'a> {
         state.offset = start;
 
         let highlight_symbol = self.highlight_symbol.unwrap_or("");
-        let blank_symbol = " ".repeat(highlight_symbol.width());
+        let blank_symbol = " ".repeat(highlight_symbol.len());
 
         let mut current_height = 0;
         let has_selection = state.selected.is_some();

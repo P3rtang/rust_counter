@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::fmt;
+use std::time::Duration;
 use serde_derive::{Serialize, Deserialize};
 use std::io::{Result, Write};
 use std::fs::File;
@@ -9,11 +10,12 @@ pub struct Counter {
     name: String,
     count: i32,
     active: bool,
+    time: Duration,
 }
 
 impl Counter {
     pub fn new(name: &str) -> Self {
-        return Counter { name: name.to_string() , count: 0, active: false }
+        return Counter { name: name.to_string() , count: 0, active: false, time: Duration::default() }
     }
 
     pub fn set_count(&mut self, count: i32)  {
@@ -24,14 +26,30 @@ impl Counter {
     }
 
     pub fn set_name(&mut self, name: &str) {
+        if name == "" {
+            return
+        }
         self.name = name.to_string()
     }
     pub fn get_name(&self) -> String {
         return self.name.clone()
     }
 
+    /// Sets the time of this [`Counter`].
+    /// time in minutes
+    pub fn set_time(&mut self, time: u64) {
+        self.time = Duration::from_secs(time * 60)
+    }
+    pub fn get_time(&self) -> Duration {
+        return self.time
+    }
+
     pub fn increase_by (&mut self, amount: i32) {
         self.count += amount
+    }
+
+    pub fn increase_time(&mut self, time: Duration) {
+        self.time += time
     }
 }
 

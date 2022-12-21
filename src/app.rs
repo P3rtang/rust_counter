@@ -20,6 +20,7 @@ pub enum AppState {
     AddingNew,
     Rename,
     ChangeCount,
+    Delete,
 }
 
 pub struct App {
@@ -74,19 +75,11 @@ impl App {
                         AppState::Selection if self.c_store.len() > 0 => {
                             match key.code {
                                 KeyCode::Char('q') => return Ok(()),
-                                KeyCode::Char('n') => { self.app_state = AppState::AddingNew }
-                                KeyCode::Char('d') => {
-                                    self.c_store.remove(self.c_state.selected().unwrap_or(0));
-                                    if self.c_state.selected().unwrap_or(0) >= self.c_store.len() && self.c_store.len() > 0 {
-                                        self.c_state.select(Some(self.c_store.len() - 1));
-                                    }
-                                }
-                                KeyCode::Char('r') => { 
-                                    self.app_state = AppState::Rename 
-                                }
-                                KeyCode::Char('s') => { 
-                                    self.app_state = AppState::ChangeCount 
-                                }
+                                KeyCode::Char('n') => { self.app_state = AppState::AddingNew   }
+                                KeyCode::Char('d') => { self.app_state = AppState::Delete      }
+                                KeyCode::Char('r') => { self.app_state = AppState::Rename      }
+                                KeyCode::Char('s') => { self.app_state = AppState::ChangeCount }
+                                KeyCode::Enter     => { self.app_state = AppState::Counting    }
                                 KeyCode::Up => {
                                     let mut selected = self.c_state.selected().unwrap();
                                     selected += len - 1;
@@ -98,9 +91,6 @@ impl App {
                                     selected += 1;
                                     selected %= len;
                                     self.c_state.select(Some(selected as usize));
-                                }
-                                KeyCode::Enter => { 
-                                    self.app_state = AppState::Counting 
                                 }
                                 _ => {}
                             }
@@ -182,6 +172,19 @@ impl App {
                                     self.app_state = AppState::Selection;
                                     self.entry_state = EntryState::default();
                                 }
+                                _ => {}
+                            }
+                        }
+                        AppState::Delete => {
+                            match key.code {
+                                KeyCode::Enter => {
+                                    self.c_store.remove(self.c_state.selected().unwrap_or(0));
+                                    if self.c_state.selected().unwrap_or(0) >= self.c_store.len() && self.c_store.len() > 0 {
+                                        self.c_state.select(Some(self.c_store.len() - 1));
+                                    }
+                                    self.app_state = AppState::Selection
+                                }
+                                KeyCode::Esc   => { self.app_state = AppState::Selection }
                                 _ => {}
                             }
                         }

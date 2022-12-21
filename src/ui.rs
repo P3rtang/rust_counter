@@ -10,6 +10,7 @@ use std::io::Stdout;
 use crate::{counter::{Counter, CounterStore}, entry::EntryState};
 use crate::app::AppState;
 use crate::entry::Entry;
+use crate::dialog::Dialog;
 
 const BLUE: Color = Color::Rgb(139, 233, 253);
 const GRAY: Color = Color::Rgb(100, 114, 125);
@@ -72,6 +73,9 @@ pub fn draw(
         draw_rename(f, entry_state)
     } else if state == AppState::ChangeCount {
         draw_change_count(f, entry_state)
+    } else if state == AppState::Delete {
+        let name = c_list.get(c_list_state.selected().unwrap_or(0)).unwrap().get_name();
+        draw_delete_dialog(f, &name)
     }
 }
 
@@ -133,4 +137,19 @@ fn draw_change_count(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut 
     if let Some(pos) = entry_state.get_cursor() {
         f.set_cursor(pos.0, pos.1)
     }
+}
+
+fn draw_delete_dialog(f: &mut Frame<CrosstermBackend<Stdout>>, name: &str) {
+    let mut size = f.size();
+    if size.width >= 50 && size.height >= 10 {
+        size = Rect::new((size.right() - 50) / 2, (size.bottom() - 10) / 2, 50, 10);
+    }
+    let block = Block::default()
+        .borders(Borders::ALL);
+    let dialog = Dialog::default()
+        .title(&format!("Are you sure you want to delete {}?", name))
+        .style(Style::default().fg(Color::Red).bg(GRAY))
+        .keys(KeyCode::Esc, KeyCode::Enter)
+        .block(block);
+    f.render_widget(dialog, size);
 }

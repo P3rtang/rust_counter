@@ -52,7 +52,7 @@ pub struct CounterStore {
 }
 
 impl CounterStore {
-    pub fn new() -> Self {
+    pub fn default() -> Self {
         return CounterStore { store: Vec::new(), index: 0 }
     }
     pub fn get(&self, index: usize) -> Option<&Counter> {
@@ -81,7 +81,11 @@ impl CounterStore {
         file.write_all(save.as_bytes()).unwrap();
     }
     pub fn from_json(json_file: &str) -> Result<Self> {
-        let store: CounterStore = serde_json::from_reader(File::open(json_file).unwrap())?;
+        let file = File::open(json_file);
+        if file.is_err() {
+            return Ok(CounterStore::default())
+        }
+        let store: CounterStore = serde_json::from_reader(file.unwrap())?;
         return Ok(store)
     }
     pub fn get_counters(&self) -> Vec<Counter> {

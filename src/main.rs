@@ -6,6 +6,8 @@ mod app;
 mod ui;
 mod entry;
 
+// you can freely change the name of this save file it will create an empty file if none with this
+// name exist
 const SAVE_FILE: &str = "data.json";
 
 fn main() {
@@ -32,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_counterstore() {
-        let mut store = counter::CounterStore::new();
+        let mut store = counter::CounterStore::default();
         let names = ["foo", "baz", "bar"];
         for name in names {
             store.push(counter::Counter::new(name))

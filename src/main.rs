@@ -39,11 +39,11 @@ mod tests {
         }
         // test counterstore len attribute
         assert_eq!(store.len(), names.len());
-        assert_eq!(store[2].name(), "bar");
+        assert_eq!(store[2].get_name(), "bar");
         assert_eq!(store.get_by_name("foo".to_string())
                    .unwrap(), &store[0]);
         for (index, counter) in store.enumerate() {
-            assert_eq!(counter.name(), names[index]);
+            assert_eq!(counter.get_name(), names[index]);
         }
     }
     #[test]

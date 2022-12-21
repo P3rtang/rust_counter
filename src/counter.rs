@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use std::fmt;
-use std::ops::Index;
 use serde_derive::{Serialize, Deserialize};
 use std::io::{Result, Write};
 use std::fs::File;
@@ -16,17 +15,23 @@ impl Counter {
     pub fn new(name: &str) -> Self {
         return Counter { name: name.to_string() , count: 0, active: false }
     }
+
     pub fn set_count(&mut self, count: i32)  {
         self.count = count
     }
     pub fn get_count(&self) -> i32 {
         return self.count
     }
+
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string()
+    }
+    pub fn get_name(&self) -> String {
+        return self.name.clone()
+    }
+
     pub fn increase_by (&mut self, amount: i32) {
         self.count += amount
-    }
-    pub fn name(&self) -> String {
-        return self.name.clone()
     }
 }
 

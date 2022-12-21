@@ -11,13 +11,15 @@ use crossterm::{
 };
 use crate::counter::{Counter, CounterStore};
 use crate::ui;
-use crate::entry::{Entry, EntryState};
+use crate::entry::EntryState;
 
 #[derive(Clone, PartialEq)]
 pub enum AppState {
     Selection,
     Counting,
     AddingNew,
+    Rename,
+    ChangeCount,
 }
 
 pub struct App {
@@ -69,20 +71,21 @@ impl App {
             if crossterm::event::poll(timeout).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
                     match self.app_state {
-                        AppState::Selection => {
+                        AppState::Selection if self.c_store.len() > 0 => {
                             match key.code {
                                 KeyCode::Char('q') => return Ok(()),
-                                KeyCode::Char('n') => { 
-                                    self.app_state = AppState::AddingNew;
-                                }
+                                KeyCode::Char('n') => { self.app_state = AppState::AddingNew }
                                 KeyCode::Char('d') => {
                                     self.c_store.remove(self.c_state.selected().unwrap_or(0));
+                                    if self.c_state.selected().unwrap_or(0) >= self.c_store.len() && self.c_store.len() > 0 {
+                                        self.c_state.select(Some(self.c_store.len() - 1));
+                                    }
                                 }
-                                KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
-                                    self.get_counter().increase_by(1);
+                                KeyCode::Char('r') => { 
+                                    self.app_state = AppState::Rename 
                                 }
-                                KeyCode::Char('-') => {
-                                    self.get_counter().increase_by(-1);
+                                KeyCode::Char('s') => { 
+                                    self.app_state = AppState::ChangeCount 
                                 }
                                 KeyCode::Up => {
                                     let mut selected = self.c_state.selected().unwrap();
@@ -96,7 +99,29 @@ impl App {
                                     selected %= len;
                                     self.c_state.select(Some(selected as usize));
                                 }
-                                KeyCode::Enter => {}
+                                KeyCode::Enter => { 
+                                    self.app_state = AppState::Counting 
+                                }
+                                _ => {}
+                            }
+                        }
+                        AppState::Selection => {
+                            match key.code {
+                                KeyCode::Char('q') => return Ok(()),
+                                KeyCode::Char('n') => { self.app_state = AppState::AddingNew }
+                                _ => {}
+                            }
+                        }
+                        AppState::Counting => {
+                            match key.code {
+                                KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
+                                    self.get_counter().increase_by(1);
+                                }
+                                KeyCode::Char('-') => {
+                                    self.get_counter().increase_by(-1);
+                                }
+                                KeyCode::Esc       => { self.app_state = AppState::Selection }
+                                KeyCode::Char('q') => { self.app_state = AppState::Selection }
                                 _ => {}
                             }
                         }
@@ -111,12 +136,55 @@ impl App {
                                     self.entry_state = EntryState::default();
                                     self.app_state = AppState::Selection;
                                 }
-                                KeyCode::Char(charr) if charr.is_alphanumeric() => { self.entry_state.push(charr) }
+                                KeyCode::Char(charr) if charr.is_alphanumeric() => { 
+                                    self.entry_state.push(charr) 
+                                }
                                 KeyCode::Backspace => { self.entry_state.pop() }
                                 _ => {}
                             }
                         }
-                        _ => {}
+                        AppState::Rename => {
+                            match key.code {
+                                KeyCode::Char(charr) if charr.is_alphanumeric() => {
+                                    self.entry_state.push(charr)
+                                }
+                                KeyCode::Backspace => {
+                                    self.entry_state.pop()
+                                }
+                                KeyCode::Enter => {
+                                    let counter = self.c_store.get_mut(self.c_state.selected().unwrap_or(0)).unwrap();
+                                    counter.set_name(&self.entry_state.get_field());
+                                    self.entry_state = EntryState::default();
+                                    self.app_state = AppState::Selection;
+                                }
+                                KeyCode::Esc => { 
+                                    self.app_state = AppState::Selection;
+                                    self.entry_state = EntryState::default();
+                                }
+                                _ => {}
+                            }
+                        }
+                        AppState::ChangeCount => {
+                            match key.code {
+                                KeyCode::Char(charr) if charr.is_numeric() => {
+                                    self.entry_state.push(charr)
+                                }
+                                KeyCode::Backspace => {
+                                    self.entry_state.pop()
+                                }
+                                KeyCode::Enter => {
+                                    let counter = self.c_store.get_mut(self.c_state.selected().unwrap_or(0)).unwrap();
+                                    counter.set_count(self.entry_state.get_field().parse().unwrap_or(counter.get_count()));
+                                    self.entry_state = EntryState::default();
+                                    self.app_state = AppState::Selection;
+                                }
+                                KeyCode::Esc => { 
+                                    self.app_state = AppState::Selection;
+                                    self.entry_state = EntryState::default();
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }

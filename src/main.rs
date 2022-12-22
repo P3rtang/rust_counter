@@ -9,12 +9,15 @@ mod dialog;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
-const SAVE_FILE: &str = "example.json";
+const SAVE_FILE:     &str = "data.json";
+const TIME_OUT:      u64  = 180;
+const TICK_SLOWDOWN: u64  = 60;
+const FRAME_RATE:    u64  = 25;
 
 fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
         .expect("Could not create Counters from save file");
-    let mut app = app::App::new(33, store.clone());
+    let mut app = app::App::new(1000 / FRAME_RATE, store.clone());
     app.start().unwrap();
     let store = app.end().unwrap();
     store.to_json(SAVE_FILE);

@@ -2,7 +2,7 @@ use crossterm::event::KeyCode;
 use tui::{
     backend::CrosstermBackend,
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    layout::{Layout, Constraint, Direction, Rect},
+    layout::{Layout, Constraint, Direction, Rect, Alignment},
     style::{Style, Color},
     Frame
 };
@@ -16,11 +16,12 @@ const BLUE: Color = Color::Rgb(139, 233, 253);
 const GRAY: Color = Color::Rgb(100, 114, 125);
 
 pub fn draw(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    c_list: &CounterStore,
-    c_list_state: &mut ListState,
-    state: AppState,
-    entry_state: &mut EntryState,
+    f:                &mut Frame<CrosstermBackend<Stdout>>,
+    c_list:           &CounterStore,
+    c_list_state:     &mut ListState,
+    state:            AppState,
+    entry_state:      &mut EntryState,
+    time_show_millis: bool,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -76,6 +77,7 @@ pub fn draw(
             )
         )
         .block(paragraph_block)
+        .alignment(Alignment::Center)
         .style(Style::default().fg(Color::White));
 
     let paragraph_time = Paragraph::new(
@@ -83,11 +85,13 @@ pub fn draw(
                 format_duration(
                     c_list.get(c_list_state.selected().unwrap_or(0))
                     .unwrap_or(&Counter::default())
-                    .get_time()
+                    .get_time(),
+                    time_show_millis
                 )
             )
         )
-        .block(time_block);
+        .block(time_block)
+        .alignment(Alignment::Center);
 
     f.render_stateful_widget(counter_list, chunks[0], c_list_state);
     f.render_widget(paragraph, righ_chunks[0]);
@@ -107,19 +111,20 @@ pub fn draw(
     }
 }
 
-fn format_duration(duration: Duration) -> String {
+fn format_duration(duration: Duration, show_millis: bool) -> String {
     let millis = duration.as_millis();
     let secs   = millis / 1000;
     let mins   = secs / 60;
     let hours  = mins / 60;
-    return format!("{:02}:{:02}:{:02},{:03}", hours, mins % 60, secs % 60, millis % 1000)
+    if show_millis {
+        return format!("{:02}:{:02}:{:02},{:03}", hours, mins % 60, secs % 60, millis % 1000)
+    }
+    return format!("{:02}:{:02}:{:02},***", hours, mins % 60, secs % 60)
 }
 
-fn format_paragraph(text: String) -> String {
-    let mut return_str = String::new();
-    return_str.push_str("\n  ");
-    return_str.push_str(&text);
-    return_str
+fn format_paragraph(mut text: String) -> String {
+    text.insert(0, '\n');
+    text
 }
 
 fn draw_new_counter(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntryState) {

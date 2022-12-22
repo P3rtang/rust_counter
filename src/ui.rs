@@ -112,6 +112,7 @@ pub fn draw(
     }
 }
 
+// format any time to a readable digital clock with hours as the highest divider
 fn format_duration(duration: Duration, show_millis: bool) -> String {
     let millis = duration.as_millis();
     let secs   = millis / 1000;

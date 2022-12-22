@@ -14,6 +14,7 @@ use crate::dialog::Dialog;
 
 const BLUE: Color = Color::Rgb(139, 233, 253);
 const GRAY: Color = Color::Rgb(100, 114, 125);
+const MAGENTA: Color = Color::Rgb(255, 121, 198)
 
 pub fn draw(
     f:                &mut Frame<CrosstermBackend<Stdout>>,
@@ -64,7 +65,7 @@ pub fn draw(
             .collect::<Vec<ListItem>>()
         )
         .block(list_block)
-        .highlight_style(Style::default().fg(Color::Magenta))
+        .highlight_style(Style::default().fg(MAGENTA))
         .highlight_symbol(" > ");
 
     let paragraph = Paragraph::new(

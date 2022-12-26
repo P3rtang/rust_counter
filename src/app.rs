@@ -1,4 +1,4 @@
-use std::{io::{self, stdout}, time::{Instant, Duration}};
+use std::{io, time::{Instant, Duration}};
 use tui::{
     backend::CrosstermBackend,
     widgets::ListState,
@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use crate::{counter::{Counter, CounterStore}, TIME_OUT, FRAME_RATE, TICK_SLOWDOWN};
-use crate::ui;
+use crate::ui::{self, UiSize};
 use crate::entry::EntryState;
 
 #[derive(Clone, PartialEq)]
@@ -21,18 +21,20 @@ pub enum AppState {
     Rename,
     ChangeCount,
     Delete,
-    Editing(u8),
+    Editing (u8),
 }
 
 pub struct App {
+    pub app_state:    AppState,
+    pub c_store:          CounterStore,
+    pub c_state:          ListState,
+    pub entry_state:      EntryState,
+    pub ui_size:          UiSize,
+    pub time_show_millis: bool,
     tick_rate:        Duration,
     last_interaction: Instant,
-    c_store:          CounterStore,
-    c_state:          ListState,
-    entry_state:      EntryState,
-    app_state:        AppState,
     running:          bool,
-    time_show_millis: bool,
+    is_super_user:    bool,
     cursor_pos:       Option<(u16, u16)>,
 }
 
@@ -45,12 +47,18 @@ impl App {
             c_state:          ListState::default(),
             entry_state:      EntryState::default(),
             app_state:        AppState::Selection,
+            ui_size:          UiSize::Big,
             running:          true,
             time_show_millis: true,
+            is_super_user:    false,
             cursor_pos:       None,
         }
     }
-    pub fn start(&mut self) -> io::Result<()> {
+    pub fn set_super_user(mut self, is_super: bool) -> Self {
+        self.is_super_user = is_super;
+        self
+    }
+    pub fn start(mut self) -> io::Result<Self> {
         // setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -73,7 +81,7 @@ impl App {
 
             // draw all ui elements
             terminal.draw(|f| {
-                ui::draw(f, &self.c_store, &mut self.c_state, self.app_state.clone(), &mut self.entry_state, self.time_show_millis);
+                ui::draw(f, &mut self);
             })?;
 
             // if a widget alters the cursor position it will report to App 
@@ -105,11 +113,14 @@ impl App {
                 self.tick_rate = Duration::from_millis(1000 / FRAME_RATE)
             }
         }
-        Ok(())
+        Ok(self)
     }
 
-    pub fn get_counter(&mut self) -> &mut Counter {
-        return self.c_store.get_mut(self.c_state.selected().unwrap_or(0)).unwrap()
+    pub fn get_active_counter(&mut self) -> Option<&mut Counter> {
+        if self.c_state.selected().is_none() {
+            return None
+        }
+        self.c_store.get_mut(self.c_state.selected().unwrap_or(0))
     }
 
     pub fn end(self) -> io::Result<CounterStore> {
@@ -143,10 +154,10 @@ impl App {
                 AppState::Counting => {
                     match key.code {
                         KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
-                            self.get_counter().increase_by(1);
+                            self.get_active_counter().unwrap().increase_by(1);
                         }
                         KeyCode::Char('-') => {
-                            self.get_counter().increase_by(-1);
+                            self.get_active_counter().unwrap().increase_by(-1);
                         }
                         KeyCode::Esc       => { self.app_state = AppState::Selection }
                         KeyCode::Char('q') => { self.app_state = AppState::Selection }

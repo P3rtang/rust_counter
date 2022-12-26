@@ -7,19 +7,21 @@ use std::fs::File;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Default)]
 pub struct Counter {
-    name: String,
-    count: i32,
-    active: bool,
-    time: Duration,
+    name:     String,
+    count:    i32,
+    active:   bool,
+    time:     Duration,
+    progress: Progress,
 }
 
 impl Counter {
     pub fn new(name: &str) -> Self {
-        return Counter { name: name.to_string() , count: 0, active: false, time: Duration::default() }
+        return Counter { name: name.to_string() , count: 0, active: false, time: Duration::default(), progress: Progress::default() }
     }
 
     pub fn set_count(&mut self, count: i32)  {
-        self.count = count
+        self.count = count;
+        self.progress.calc_progress(self.count as u64);
     }
     pub fn get_count(&self) -> i32 {
         return self.count
@@ -45,11 +47,24 @@ impl Counter {
     }
 
     pub fn increase_by (&mut self, amount: i32) {
-        self.count += amount
+        self.count += amount;
+        self.progress.calc_progress(self.count as u64);
     }
 
     pub fn increase_time(&mut self, time: Duration) {
-        self.time += time
+        self.time += time;
+        self.progress.calc_progress(self.count as u64);
+    }
+
+    pub fn get_progress(&self) -> f64 {
+        self.progress.progress
+    }
+
+    pub fn get_progress_odds(&self) -> u64 {
+        match self.progress.kind {
+            ProgressKind::Normal(odds) => odds,
+            _ => 4096,
+        }
     }
 }
 
@@ -137,5 +152,42 @@ impl Iterator for CounterStore {
         let counter = self[self.index].clone();
         self.index += 1;
         return Some(counter);
+    }
+}
+
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+enum ProgressKind {
+    Normal(u64),
+    DexNav,
+    Sos,
+}
+
+
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct Progress {
+    progress: f64,
+    kind:     ProgressKind,
+}
+
+impl Progress {
+    fn new(kind: ProgressKind) -> Self {
+        Progress { progress: 0.0, kind }
+    }
+    fn calc_progress(&mut self, steps: u64) -> f64 {
+        match self.kind {
+            ProgressKind::Normal(odds) => {
+                let neg_chance = (odds-1) as f64 / odds as f64;
+                self.progress = 1f64 - neg_chance.powf(steps as f64);
+                return self.progress
+            },
+            ProgressKind::DexNav => todo!(),
+            ProgressKind::Sos => todo!(),
+        }
+    }
+}
+
+impl Default for Progress {
+    fn default() -> Self {
+        Self { progress: 0.0, kind: ProgressKind::Normal(8192) }
     }
 }

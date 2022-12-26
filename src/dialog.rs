@@ -6,7 +6,7 @@ use tui::layout::Rect;
 
 pub struct Dialog<'a> {
     block:       Option<Block<'a>>,
-    title:       String,
+    message:     String,
     style:       Style,
     confirm_key: Option<KeyCode>,
     cancel_key:  Option<KeyCode>,
@@ -16,7 +16,7 @@ impl<'a> Dialog<'a> {
     pub fn default() -> Self {
         return Dialog {
             block:       Some(Block::default()),
-            title:       "".to_string(),
+            message:     "".to_string(),
             style:       Style::default(),
             confirm_key: None,
             cancel_key:  None,
@@ -32,8 +32,8 @@ impl<'a> Dialog<'a> {
         self
     }
 
-    pub fn title(mut self, title: &str) -> Self {
-        self.title = title.to_string();
+    pub fn message(mut self, title: &str) -> Self {
+        self.message = title.to_string();
         self
     }
 
@@ -57,14 +57,30 @@ impl<'a> Widget for Dialog<'a> {
             None => area,
         };
 
+        /* print all empty characters for the entire area of the entry widget to make it override
+        any other widget below */
+        let widget_empty = Text::raw(" ".repeat(widget_area.width as usize));
+        for i in 0..widget_area.height {
+            buf.set_spans(widget_area.x, widget_area.y + i as u16, &widget_empty.lines[0], widget_area.width);
+        }
+
         // showing title two line above the entry bar
-        if widget_area.width > self.title.len() as u16 {
-            let title = Text::raw(self.title);
-            for line in title.lines {
+        let message = Text::raw(self.message);
+        for (line_nr, line) in message.lines.iter().enumerate() {
+            if widget_area.width < line.width() as u16 {
+                buf.set_spans(
+                    widget_area.x,
+                    widget_area.y + line_nr as u16,
+                    line,
+                    widget_area.width
+                );
+            } else if widget_area.height <= line_nr as u16 {
+                continue;
+            } else {
                 buf.set_spans(
                     (widget_area.width - line.width() as u16) / 2 + widget_area.x,
-                    widget_area.height / 2 + widget_area.y - 2, 
-                    &line, 
+                    widget_area.height / 2 + widget_area.y - 2 + line_nr as u16, 
+                    line, 
                     widget_area.width
                 );
             }

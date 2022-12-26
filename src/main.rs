@@ -18,7 +18,7 @@ fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
         .expect("Could not create Counters from save file");
     let mut app = app::App::new(1000 / FRAME_RATE, store.clone());
-    app.start().unwrap();
+    app = app.start().unwrap();
     let store = app.end().unwrap();
     store.to_json(SAVE_FILE);
 }

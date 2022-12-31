@@ -56,8 +56,8 @@ impl EntryState {
         return self.cursor_pos;
     }
 
-    pub fn set_field(&mut self, field: &str) {
-        self.fields[self.active_field] = field.to_string()
+    pub fn set_field(&mut self, field: impl Into<String>) {
+        self.fields[self.active_field] = field.into()
     }
 }
 
@@ -103,8 +103,8 @@ impl<'a> Entry<'a> {
         self
     }
 
-    pub fn title(mut self, title: &str) -> Self {
-        self.message = title.to_string();
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.message = title.into();
         self
     }
 

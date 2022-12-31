@@ -32,8 +32,8 @@ impl<'a> Dialog<'a> {
         self
     }
 
-    pub fn message(mut self, title: &str) -> Self {
-        self.message = title.to_string();
+    pub fn message(mut self, title: impl Into<String>) -> Self {
+        self.message = title.into();
         self
     }
 

@@ -188,7 +188,7 @@ fn format_paragraph(mut text: String) -> String {
     text
 }
 
-fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntryState, title: &str, size: (u16, u16)) {
+fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntryState, title: impl Into<String>, size: (u16, u16)) {
     let mut window = f.size();
     if window.width >= size.0 && window.height >= size.1 {
         window = Rect::new((window.right() - size.0) / 2, (window.bottom() - size.1) / 2, size.0, size.1);
@@ -208,7 +208,7 @@ fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntrySt
     }
 }
 
-fn draw_delete_dialog(f: &mut Frame<CrosstermBackend<Stdout>>, name: &str) {
+fn draw_delete_dialog(f: &mut Frame<CrosstermBackend<Stdout>>, name: impl Into<String> + std::fmt::Display) {
     let mut size = f.size();
     if size.width >= 50 && size.height >= 10 {
         size = Rect::new((size.right() - 50) / 2, (size.bottom() - 10) / 2, 50, 10);

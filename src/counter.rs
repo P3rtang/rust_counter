@@ -17,9 +17,9 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         return Counter { 
-            name: name.to_string(),
+            name: name.into(),
             count: 0,
             active: false,
             time: Duration::default(),
@@ -52,11 +52,11 @@ impl Counter {
         self.phases[index].time
     }
 
-    pub fn set_name(&mut self, name: &str) {
-        if name == "" {
+    pub fn set_name(&mut self, name: impl Into<String> + Copy) {
+        if name.into() == "" {
             return
         }
-        self.name = name.to_string()
+        self.name = name.into()
     }
     pub fn get_name(&self) -> String {
         return self.name.clone()
@@ -112,8 +112,8 @@ impl Counter {
         if index >= self.get_phase_len() { index = 0 }
         self.phases[index].count += phase.count
     }
-    pub fn set_phase_name(&mut self, index: usize, name: &str) {
-        self.phases[index].name = name.to_string()
+    pub fn set_phase_name(&mut self, index: usize, name: impl Into<String>) {
+        self.phases[index].name = name.into()
     }
 }
 
@@ -140,9 +140,9 @@ impl CounterStore {
     pub fn get_mut(&self, index: usize) -> Option<RefMut<Counter>> {
         return self.store.get(index).map(|counter| counter.borrow_mut())
     }
-    pub fn get_by_name(&self, name: String) -> Option<Ref<Counter>> {
+    pub fn get_by_name(&self, name: impl Into<String> + Copy) -> Option<Ref<Counter>> {
         for counter in &self.store {
-            if counter.borrow().name == name {
+            if counter.borrow().name == name.into() {
                 return Some(counter.borrow())
             }
         }
@@ -246,8 +246,8 @@ pub struct Phase {
 }
 
 impl Phase {
-    fn new(name: &str, count: i32, time: Duration) -> Self {
-        Self { name: name.to_string(), count, time }
+    fn new(name: impl Into<String>, count: i32, time: Duration) -> Self {
+        Self { name: name.into(), count, time }
     }
 
     pub fn get_name(&self) -> String {

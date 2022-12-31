@@ -198,7 +198,7 @@ impl App {
                         }
                         KeyCode::Enter => { 
                             self.c_store
-                                .push(Counter::new(&self.entry_state.get_active_field())
+                                .push(Counter::new(self.entry_state.get_active_field())
                             );
                             self.entry_state = EntryState::default();
                             self.app_state = AppState::Selection;
@@ -298,7 +298,7 @@ impl App {
                 match key {
                     KeyCode::Enter => { 
                         self.get_unsafe_c_mut()
-                            .set_name(&self.entry_state.get_active_field());
+                            .set_name(self.entry_state.get_active_field());
                         self.entry_state = EntryState::default();
                         self.app_state = AppState::Editing(1) 
                     }
@@ -348,7 +348,7 @@ impl App {
                 self.entry_state.pop();
             }
             KeyCode::Enter => {
-                self.get_unsafe_c_mut().set_name(&self.entry_state.get_active_field());
+                self.get_unsafe_c_mut().set_name(self.entry_state.get_active_field());
                 self.entry_state = EntryState::default();
                 self.app_state = AppState::Selection;
             }
@@ -417,7 +417,7 @@ impl App {
                 self.get_unsafe_c_mut()
                     .set_phase_name(
                         self.phase_list_state.selected().unwrap_or(0),
-                        &self.entry_state.get_active_field()
+                        self.entry_state.get_active_field()
                     );
                 self.entry_state = EntryState::default();
                 self.app_state   = AppState::PhaseSelect;

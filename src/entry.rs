@@ -1,27 +1,45 @@
+use crossterm::event::KeyCode;
+use tui::layout::Rect;
 use tui::text::Text;
 use tui::widgets::Block;
-use crossterm::event::KeyCode;
-use tui::{style::Style, widgets::{Widget, StatefulWidget}};
-use tui::layout::Rect;
+use tui::{
+    style::Style,
+    widgets::{StatefulWidget, Widget},
+};
 
 pub struct EntryState {
-    field: String,
+    fields: Vec<String>,
+    active_field: usize,
     cursor_pos: Option<(u16, u16)>,
 }
 
 impl EntryState {
     pub fn default() -> Self {
-        return EntryState { field: "".to_string(), cursor_pos: Some((0, 0)) }
+        return EntryState {
+            fields: vec![String::new(); 1],
+            active_field: 0,
+            cursor_pos: Some((0, 0)),
+        };
     }
+
     pub fn push(&mut self, charr: char) {
-        self.field.push(charr);
+        self.fields[self.active_field].push(charr);
     }
-    pub fn get_field(&self) -> String {
-        return self.field.clone()
+
+    pub fn get_field(&self, index: usize) -> String {
+        self.fields[index].clone()
+    }
+
+    pub fn get_active_field(&self) -> &String {
+        &self.fields[self.active_field]
+    }
+
+    pub fn get_fields(&self) -> Vec<String> {
+        return self.fields.clone();
     }
 
     pub fn pop(&mut self) {
-        self.field.pop();
+        self.fields[self.active_field].pop();
     }
 
     pub fn show_cursor(mut self) -> Self {
@@ -35,31 +53,35 @@ impl EntryState {
     }
 
     pub fn get_cursor(&self) -> Option<(u16, u16)> {
-        return self.cursor_pos
+        return self.cursor_pos;
+    }
+
+    pub fn set_field(&mut self, field: &str) {
+        self.fields[self.active_field] = field.to_string()
     }
 }
 
 pub struct Entry<'a> {
-    block:       Option<Block<'a>>,
-    title:       String,
+    block: Option<Block<'a>>,
+    message: String,
     field_width: u16,
-    style:       Style,
+    style: Style,
     field_style: Style,
     confirm_key: Option<KeyCode>,
-    cancel_key:  Option<KeyCode>,
+    cancel_key: Option<KeyCode>,
 }
 
 impl<'a> Entry<'a> {
     pub fn default() -> Self {
         return Entry {
-            block:       Some(Block::default()),
-            title:       "".to_string(),
+            block: Some(Block::default()),
+            message: "".to_string(),
             field_width: 10,
-            style:       Style::default(),
+            style: Style::default(),
             field_style: Style::default(),
             confirm_key: None,
-            cancel_key:  None,
-        }
+            cancel_key: None,
+        };
     }
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);
@@ -82,13 +104,13 @@ impl<'a> Entry<'a> {
     }
 
     pub fn title(mut self, title: &str) -> Self {
-        self.title = title.to_string();
+        self.message = title.to_string();
         self
     }
 
     pub fn keys(mut self, cancel_key: KeyCode, confirm_key: KeyCode) -> Self {
         self.confirm_key = Some(confirm_key);
-        self.cancel_key  = Some(cancel_key);
+        self.cancel_key = Some(cancel_key);
         self
     }
 }
@@ -108,20 +130,14 @@ impl<'a> StatefulWidget for Entry<'a> {
             None => area,
         };
 
-        // always keep the entry area two characters bigger than the entered frase
-        // but only increase after it has exceeded the requested start length
-        if state.field.len() + 2 > self.field_width as usize {
-            self.field_width = state.field.len() as u16 + 2
-        }
-
         // calculate the area of the entry bar
         let mut entry_area = Rect::default();
         if widget_area.width > self.field_width && widget_area.height > 3 {
-            entry_area = Rect{ 
-                x:      (widget_area.width - self.field_width) / 2 + widget_area.x,
-                y:      widget_area.height / 2 + widget_area.y,
-                width:  self.field_width,
-                height: 1
+            entry_area = Rect {
+                x: (widget_area.width - self.field_width) / 2 + widget_area.x,
+                y: widget_area.height / 2 + widget_area.y,
+                width: self.field_width,
+                height: 1,
             };
         }
 
@@ -130,41 +146,81 @@ impl<'a> StatefulWidget for Entry<'a> {
         any other widget below */
         let widget_empty = Text::raw(" ".repeat(widget_area.width as usize));
         for i in 0..widget_area.height {
-            buf.set_spans(widget_area.x, widget_area.y + i as u16, &widget_empty.lines[0], widget_area.width);
+            buf.set_spans(
+                widget_area.x,
+                widget_area.y + i as u16,
+                &widget_empty.lines[0],
+                widget_area.width,
+            );
         }
 
-        // showing title two line above the entry bar
-        if widget_area.width > self.title.len() as u16 {
-            let title = Text::raw(self.title);
-            for line in title.lines {
+        let message = Text::raw(self.message);
+        for (line_nr, line) in message.lines.iter().enumerate() {
+            if widget_area.width < line.width() as u16 {
+                buf.set_spans(
+                    widget_area.x,
+                    widget_area.y + line_nr as u16,
+                    line,
+                    widget_area.width,
+                );
+            } else if widget_area.height <= line_nr as u16 {
+                continue;
+            } else {
                 buf.set_spans(
                     (widget_area.width - line.width() as u16) / 2 + widget_area.x,
-                    widget_area.height / 2 + widget_area.y - 2, 
-                    &line, 
-                    widget_area.width
+                    widget_area.height / 2 + widget_area.y - 2 + line_nr as u16,
+                    line,
+                    widget_area.width,
                 );
             }
         }
         // create a span to show the entered information padded by underscores
-        let mut padded_field = state.get_field();
-        if self.field_width > state.field.len() as u16 {
-            padded_field.push_str(&"_".repeat(self.field_width as usize - state.field.len()));
-        }
-        let line = Text::raw(&padded_field);
-        for line in line.lines {
-            buf.set_spans(entry_area.x, entry_area.y, &line, widget_area.width);
+        for (field_nr, field) in state.get_fields().iter().enumerate() {
+            // always keep the entry area two characters bigger than the entered frase
+            // but only increase after it has exceeded the requested start length
+            if field.len() + 2 > self.field_width as usize {
+                self.field_width = field.len() as u16 + 2
+            }
+
+            let mut padded_field = field.clone();
+            if self.field_width > field.len() as u16 {
+                padded_field.push_str(&"_".repeat(self.field_width as usize - field.len()));
+            }
+            let line = Text::raw(&padded_field);
+            buf.set_spans(
+                entry_area.x,
+                entry_area.y + field_nr as u16,
+                &line.lines[0],
+                widget_area.width,
+            );
         }
 
         // setting cursor just after last character
         if state.get_cursor().is_some() {
-            state.cursor_pos = Some((entry_area.x + state.field.len() as u16, entry_area.y));
+            state.cursor_pos = Some((
+                entry_area.x + state.get_active_field().len() as u16,
+                entry_area.y,
+            ));
         }
 
         // display the usable keys on the bottom if space allows it and keys are initialized
-        let key_info = format!("<{:?}>Cancel  <{:?}>Confirm", self.cancel_key.unwrap(), self.confirm_key.unwrap());
-        if widget_area.height >= 4 && widget_area.width > key_info.len() as u16 && self.cancel_key.is_some() && self.confirm_key.is_some() {
+        let key_info = format!(
+            "<{:?}>Cancel  <{:?}>Confirm",
+            self.cancel_key.unwrap(),
+            self.confirm_key.unwrap()
+        );
+        if widget_area.height >= 4
+            && widget_area.width > key_info.len() as u16
+            && self.cancel_key.is_some()
+            && self.confirm_key.is_some()
+        {
             let key_line = Text::raw(&key_info);
-            buf.set_spans(widget_area.x + widget_area.width - 1 - key_info.len() as u16, widget_area.y + widget_area.height - 1, &key_line.lines[0], widget_area.width);
+            buf.set_spans(
+                widget_area.x + widget_area.width - 1 - key_info.len() as u16,
+                widget_area.y + widget_area.height - 1,
+                &key_line.lines[0],
+                widget_area.width,
+            );
         }
     }
 }

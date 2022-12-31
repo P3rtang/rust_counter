@@ -19,6 +19,10 @@ fn main() {
         .expect("Could not create Counters from save file");
     let mut app = app::App::new(1000 / FRAME_RATE, store.clone());
     app = app.start().unwrap();
+    eprintln!("{}", 
+        app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")
+        .collect::<String>()
+    );
     let store = app.end().unwrap();
     store.to_json(SAVE_FILE);
 }
@@ -45,11 +49,9 @@ mod tests {
         }
         // test counterstore len attribute
         assert_eq!(store.len(), names.len());
-        assert_eq!(store[2].get_name(), "bar");
-        assert_eq!(store.get_by_name("foo".to_string())
-                   .unwrap(), &store[0]);
+        assert_eq!(store[2].borrow().get_name(), "bar");
         for (index, counter) in store.enumerate() {
-            assert_eq!(counter.get_name(), names[index]);
+            assert_eq!(counter.borrow().get_name(), names[index]);
         }
     }
     #[test]

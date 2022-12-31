@@ -7,7 +7,7 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::{counter::Counter, entry::EntryState};
+use crate::entry::EntryState;
 use crate::app::{App, AppState};
 use crate::entry::Entry;
 use crate::dialog::Dialog;
@@ -47,6 +47,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         .split(chunks[1]);
 
     if app.ui_size == UiSize::Big && app.get_active_counter().is_some() {
+        let counter = app.get_unsafe_counter();
         let chunk = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(4), Constraint::Length(4)].as_ref())
@@ -56,10 +57,10 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
             .borders(Borders::TOP.complement())
             .style(Style::default().fg(Color::Black));
 
-        let progress = app.get_active_counter().unwrap().get_progress();
+        let progress = counter.get_progress();
         let color: Color;
         if progress < 0.5 { color = GREEN }
-        else if app.get_active_counter().unwrap().get_count() < app.get_active_counter().unwrap().get_progress_odds() as i32 { color = YELLOW }
+        else if counter.get_count() < counter.get_progress_odds() as i32 { color = YELLOW }
         else if progress < 0.75 { color = ORANGE }
         else { color = BRIGHT_RED }
 
@@ -70,6 +71,8 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
             .label(format!("{:.3}", progress * 100.0));
         f.render_widget(progress_bar, chunk[1]);
     }
+
+    let state = app.app_state.clone();
 
     let mut list_block = Block::default()
         .title("Counters")
@@ -82,63 +85,89 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     let time_block = Block::default()
         .borders(Borders::TOP.complement());
 
-    if app.app_state == AppState::Counting {
+    if let AppState::Counting(num) = app.app_state {
         list_block = list_block.style(Style::default().fg(Color::White)).title("");
+        let title = match num {
+            0 => app.get_unsafe_counter().get_name(),
+            1 => app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)),
+            _ => "".to_string()
+        };
         paragraph_block = paragraph_block
             .border_style(Style::default().fg(BLUE))
-            .title(format!("{}", app.c_store.get(app.c_state.selected().unwrap_or(0)).unwrap().get_name()));
+            .title(title);
     }
 
-    let counter_list = List::new(
-            app.c_store.get_counters()
-            .iter()
-            .map(|counter| ListItem::new(counter.get_name()))
-            .collect::<Vec<ListItem>>()
-        )
-        .block(list_block)
-        .highlight_style(Style::default().fg(MAGENTA))
-        .highlight_symbol(" > ");
+    let mut list = app.c_store
+        .get_counters()
+        .iter()
+        .map(|counter| ListItem::new(counter.borrow().get_name()))
+        .collect::<Vec<ListItem>>();
 
-    let paragraph = Paragraph::new(
-            format_paragraph(
-                app.c_store.get(
-                    app.c_state.selected().unwrap_or(0))
-                    .unwrap_or(&Counter::default())
-                .get_count()
-                .to_string()
-            )
-        )
+    let mut active_count = app.get_active_counter().map(|c| c.get_count()).unwrap_or(0);
+    let mut active_time  = app.get_active_counter().map(|c| c.get_time()).unwrap_or(Duration::default());
+    let mut list_state   = &mut app.c_state;
+
+    if  state == AppState::PhaseSelect ||
+        state == AppState::RenamePhase || 
+        state == AppState::Counting(1)  
+    {
+        list = app.get_active_counter().unwrap()
+            .get_phases().iter()
+            .map(|phase| ListItem::new(phase.get_name()))
+            .collect();
+
+        active_count = app.get_unsafe_counter().get_nphase_count(app.phase_list_state.selected().unwrap_or(0));
+        active_time  = app.get_unsafe_counter().get_nphase_time(app.phase_list_state.selected().unwrap_or(0));
+        list_state   = &mut app.phase_list_state
+    }
+
+    let counter_list = create_list(list, list_block);
+
+    let paragraph = Paragraph::new(format_paragraph(active_count.to_string()))
         .block(paragraph_block)
         .alignment(Alignment::Center);
 
     let paragraph_time = Paragraph::new(
             format_paragraph(
-                format_duration(
-                    app.c_store.get(app.c_state.selected().unwrap_or(0))
-                    .unwrap_or(&Counter::default())
-                    .get_time(),
-                    app.time_show_millis
-                )
+                format_duration(active_time, app.time_show_millis)
             )
         )
         .block(time_block)
         .alignment(Alignment::Center);
 
-    f.render_stateful_widget(counter_list, chunks[0], &mut app.c_state);
+    f.render_stateful_widget(counter_list, chunks[0], list_state);
     f.render_widget(paragraph, right_chunks[0]);
     f.render_widget(paragraph_time, right_chunks[1]);
 
-    if app.app_state == AppState::AddingNew {
-        draw_entry(f, &mut app.entry_state, "Name new Counter", (50, 10))
-    } else if app.app_state == AppState::Rename || app.app_state == AppState::Editing(0) {
-        draw_entry(f, &mut app.entry_state, "Rename Counter", (50, 10))
-    } else if app.app_state == AppState::ChangeCount || app.app_state == AppState::Editing(1) {
-        draw_entry(f, &mut app.entry_state, "Change Count", (50, 10))
-    } else if app.app_state == AppState::Editing(2) {
-        draw_entry(f, &mut app.entry_state, "Change Time", (50, 10))
-    } else if app.app_state == AppState::Delete {
-        let name = app.c_store.get(app.c_state.selected().unwrap_or(0)).unwrap().get_name();
-        draw_delete_dialog(f, &name)
+    // if any the app is in an entry state draw them last so they go on top
+    match app.app_state {
+        AppState::AddingNew => {
+            draw_entry(f, &mut app.entry_state, "Name new Counter", (50, 10))
+        }
+        AppState::RenamePhase => {
+            let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)));
+            draw_entry(f, &mut app.entry_state, &phase_title, (50, 10));
+        }
+        AppState::Rename | AppState::Editing(0) => { 
+            draw_entry(f, &mut app.entry_state, "Change Name", (50, 10)) 
+        }
+        AppState::ChangeCount | AppState::Editing(1) => {
+            draw_entry(f, &mut app.entry_state, "Change Count", (50, 10))
+        }
+        AppState::Editing(2) => {
+            draw_entry(f, &mut app.entry_state, "Change Time", (50, 10));
+        }
+        AppState::Delete => {
+            let name = app.get_active_counter().unwrap().get_name();
+            draw_delete_dialog(f, &name)
+        }
+        AppState::DeletePhase =>  {
+            if app.get_unsafe_counter().get_phase_count() > 1 {
+                let name = app.get_active_counter().unwrap().get_phase_name(app.c_state.selected().unwrap_or(1));
+                draw_delete_dialog(f, &name)
+            }
+        }
+        _ => {}
     }
 }
 
@@ -192,4 +221,12 @@ fn draw_delete_dialog(f: &mut Frame<CrosstermBackend<Stdout>>, name: &str) {
         .keys(KeyCode::Esc, KeyCode::Enter)
         .block(block);
     f.render_widget(dialog, size);
+}
+
+fn create_list<'a>(list: Vec<ListItem<'a>>, block: Block<'a>) -> List<'a> {
+    let counter_list = List::new(list)
+        .block(block)
+        .highlight_style(Style::default().fg(MAGENTA))
+        .highlight_symbol(" > ");
+    counter_list
 }

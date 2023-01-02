@@ -7,8 +7,7 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::entry::EntryState;
-use crate::app::{App, AppState};
+use crate::{entry::EntryState, app::{App, AppState, DialogState as DS, EditingState as ES}};
 use crate::entry::Entry;
 use crate::dialog::Dialog;
 
@@ -72,27 +71,27 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
 
     // if any the app is in an entry state draw them last so they go on top
     match app.app_state {
-        AppState::AddingNew => {
+        AppState::Selection(DS::AddNew) => {
             draw_entry(f, &mut app.entry_state, "Name new Counter", (50, 10))
         }
-        AppState::RenamePhase => {
+        AppState::PhaseSelect(DS::Editing(_)) => {
             let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)));
             draw_entry(f, &mut app.entry_state, &phase_title, (50, 10));
         }
-        AppState::RenameCounter | AppState::Editing(0) => { 
+        AppState::Selection(DS::Editing(ES::Rename(_))) => {
             draw_entry(f, &mut app.entry_state, "Change Name", (50, 10)) 
         }
-        AppState::ChangeCount | AppState::Editing(1) => {
+        AppState::Selection(DS::Editing(ES::ChCount(_))) => {
             draw_entry(f, &mut app.entry_state, "Change Count", (50, 10))
         }
-        AppState::Editing(2) => {
+        AppState::Selection(DS::Editing(ES::ChTime(_))) => {
             draw_entry(f, &mut app.entry_state, "Change Time", (50, 10));
         }
-        AppState::DeleteCounter => {
+        AppState::Selection(DS::Delete) => {
             let name = app.get_active_counter().unwrap().get_name();
             draw_delete_dialog(f, &name)
         }
-        AppState::DeletePhase =>  {
+        AppState::PhaseSelect(DS::Delete) =>  {
             if app.get_unsafe_counter().get_phase_count() > 1 {
                 let name = app.get_active_counter().unwrap().get_phase_name(app.c_state.selected().unwrap_or(1));
                 draw_delete_dialog(f, &name)
@@ -168,9 +167,9 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
     // if the list is displayed it should be blue when it is the active widget
     use AppState::*;
     let (color, title) = match app.app_state {
-        PhaseSelect | DeletePhase | RenamePhase | Counting(1) 
+        PhaseSelect(_) | Counting(1) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
-        PhaseSelect | DeletePhase | RenamePhase | Counting(_) => (Color::White, ""),
+        PhaseSelect(_) | Counting(_) => (Color::White, ""),
         _ => (BLUE, "Counters"),
     };
 
@@ -185,9 +184,9 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppState::*;
     let (color, title) = match app.app_state {
-        Selection | DeleteCounter | RenameCounter | ChangeCount | Counting(0) | AddingNew | Editing(_) 
+        Selection(_) | Counting(0) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
-        Selection | DeleteCounter | RenameCounter | ChangeCount | Counting(_) | AddingNew | Editing(_) => (Color::White, ""),
+        Selection(_) | Counting(_) => (Color::White, ""),
         _ => (BLUE, "Phases")
     };
 
@@ -211,7 +210,7 @@ fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
     };
 
     let (active_count, active_time) = match app.app_state {
-        PhaseSelect | DeletePhase | RenamePhase | Counting(1) => (
+        PhaseSelect(_) | Counting(1) => (
             app.get_active_counter().map_or(0,                   |c| c.get_nphase_count (app.phase_list_state.selected().unwrap_or(0))),
             app.get_active_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.phase_list_state.selected().unwrap_or(0))),
         ),

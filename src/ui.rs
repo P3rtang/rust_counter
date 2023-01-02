@@ -2,7 +2,7 @@ use crossterm::event::KeyCode;
 use tui::{
     backend::CrosstermBackend,
     widgets::{Block, Borders, List, ListItem, Paragraph, Gauge},
-    layout::{Layout, Constraint, Direction, Rect, Alignment, Margin},
+    layout::{Layout, Constraint, Direction, Rect, Alignment},
     style::{Style, Color, Modifier},
     Frame
 };
@@ -22,7 +22,7 @@ const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
 const YELLOW:     Color = Color::Rgb(241, 250, 140);
 
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum UiWidth {
     VerySmall,
     Small,
@@ -111,7 +111,7 @@ fn format_duration(duration: Duration, show_millis: bool) -> String {
     if show_millis {
         return format!("{:02}:{:02}:{:02},{:03}", hours, mins % 60, secs % 60, millis % 1000)
     }
-    return format!("{:02}:{:02}:{:02},***", hours, mins % 60, secs % 60)
+    format!("{:02}:{:02}:{:02},***", hours, mins % 60, secs % 60)
 }
 
 fn format_paragraph(text: impl Into<String>) -> String {
@@ -182,7 +182,7 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
     f.render_stateful_widget(list_widget, area, &mut app.c_state)
 }
 
-fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppState::*;
     let (color, title) = match app.app_state {
         Selection | DeleteCounter | RenameCounter | ChangeCount | Counting(0) | AddingNew | Editing(_) 
@@ -202,7 +202,7 @@ fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
     f.render_stateful_widget(list_widget, area[rect_ind], &mut app.phase_list_state)
 }
 
-fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppState::*;
     let (color, title) = match app.app_state {
         Counting(_) => (BLUE, format!("{} - {}", app.get_unsafe_counter().get_name(), app.get_unsafe_counter().get_phase_name(0))),
@@ -240,7 +240,7 @@ fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
     f.render_widget(paragraph_time, area[1]);
 }
 
-fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppState::*;
 
     let progress = app.get_active_counter().map_or(0.0, |c| c.get_progress());

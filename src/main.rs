@@ -17,7 +17,7 @@ const FRAME_RATE:    u64  = 25;
 fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
         .expect("Could not create Counters from save file");
-    let mut app = app::App::new(1000 / FRAME_RATE, store.clone());
+    let mut app = app::App::new(1000 / FRAME_RATE, store);
     app = app.start().unwrap();
     println!("Debug Info:\n{}", 
         app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")

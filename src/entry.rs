@@ -15,11 +15,11 @@ pub struct EntryState {
 
 impl EntryState {
     pub fn default() -> Self {
-        return EntryState {
+        EntryState {
             fields: vec![String::new(); 1],
             active_field: 0,
             cursor_pos: Some((0, 0)),
-        };
+        }
     }
 
     pub fn push(&mut self, charr: char) {
@@ -35,7 +35,7 @@ impl EntryState {
     }
 
     pub fn get_fields(&self) -> Vec<String> {
-        return self.fields.clone();
+        self.fields.clone()
     }
 
     pub fn pop(&mut self) {
@@ -53,7 +53,7 @@ impl EntryState {
     }
 
     pub fn get_cursor(&self) -> Option<(u16, u16)> {
-        return self.cursor_pos;
+        self.cursor_pos
     }
 
     pub fn set_field(&mut self, field: impl Into<String>) {
@@ -73,7 +73,7 @@ pub struct Entry<'a> {
 
 impl<'a> Entry<'a> {
     pub fn default() -> Self {
-        return Entry {
+        Entry {
             block: Some(Block::default()),
             message: "".to_string(),
             field_width: 10,
@@ -81,7 +81,7 @@ impl<'a> Entry<'a> {
             field_style: Style::default(),
             confirm_key: None,
             cancel_key: None,
-        };
+        }
     }
     pub fn block(mut self, block: Block<'a>) -> Self {
         self.block = Some(block);

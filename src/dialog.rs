@@ -14,7 +14,7 @@ pub struct Dialog<'a> {
 
 impl<'a> Dialog<'a> {
     pub fn default() -> Self {
-        return Dialog {
+        Dialog {
             block:       Some(Block::default()),
             message:     "".to_string(),
             style:       Style::default(),

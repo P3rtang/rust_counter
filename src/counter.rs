@@ -18,7 +18,7 @@ pub struct Counter {
 
 impl Counter {
     pub fn new(name: impl Into<String>) -> Self {
-        return Counter { 
+        Counter { 
             name: name.into(),
             count: 0,
             active: false,
@@ -35,7 +35,7 @@ impl Counter {
         self.progress.calc_progress(self.count as u64);
     }
     pub fn get_count(&self) -> i32 {
-        return self.count
+        self.count
     }
 
     pub fn get_phase_count(&self) -> i32 {
@@ -59,7 +59,7 @@ impl Counter {
         self.name = name.into()
     }
     pub fn get_name(&self) -> String {
-        return self.name.clone()
+        self.name.clone()
     }
 
     /// Sets the time of this [`Counter`].
@@ -68,7 +68,7 @@ impl Counter {
         self.time = Duration::from_secs(time * 60)
     }
     pub fn get_time(&self) -> Duration {
-        return self.time
+        self.time
     }
 
     pub fn increase_by (&mut self, amount: i32) {
@@ -101,7 +101,7 @@ impl Counter {
         self.phases.len()
     }
     pub fn get_phases(&self) -> Vec<Phase> {
-        return self.phases.clone()
+        self.phases.clone()
     }
     pub fn get_phase_name(&self, index: usize) -> String {
         self.phases[index].name.clone()
@@ -146,7 +146,7 @@ impl CounterStore {
                 return Some(counter.borrow())
             }
         }
-        return None
+        None
     }
     pub fn push(&mut self, counter: Counter) {
         self.store.push(RefCell::new(counter))
@@ -165,10 +165,10 @@ impl CounterStore {
             return Ok(CounterStore::default())
         }
         let store: CounterStore = serde_json::from_reader(file.unwrap())?;
-        return Ok(store)
+        Ok(store)
     }
     pub fn get_counters(&self) -> Vec<RefCell<Counter>> {
-        return self.store.clone()
+        self.store.clone()
     }
     pub fn remove(&mut self, id: usize) {
         if (0..self.store.len()).contains(&id) {
@@ -197,7 +197,7 @@ impl Iterator for CounterStore {
         }
         let counter = self[self.index].clone();
         self.index += 1;
-        return Some(counter);
+        Some(counter)
     }
 }
 
@@ -224,7 +224,7 @@ impl Progress {
             ProgressKind::Normal(odds) => {
                 let neg_chance = (odds-1) as f64 / odds as f64;
                 self.progress = 1f64 - neg_chance.powf(steps as f64);
-                return self.progress
+                self.progress
             },
             ProgressKind::DexNav => todo!(),
             ProgressKind::Sos => todo!(),
@@ -238,7 +238,7 @@ impl Default for Progress {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Phase {
     name:  String,
     count: i32,

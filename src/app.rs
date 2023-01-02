@@ -16,7 +16,7 @@ use crate::{counter::{Counter, CounterStore}, TIME_OUT, FRAME_RATE, TICK_SLOWDOW
 use crate::ui::{self, UiWidth};
 use crate::entry::EntryState;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum AppState {
     Selection,
     PhaseSelect,
@@ -48,7 +48,7 @@ pub struct App {
 
 impl App {
     pub fn new(tick_rate: u64, counter_store: CounterStore) -> Self {
-        return App { 
+        App { 
             tick_rate:        Duration::from_millis(tick_rate),
             last_interaction: Instant::now(),
             c_store:          counter_store,
@@ -381,7 +381,7 @@ impl App {
                 self.get_unsafe_c_mut().set_count(
                     self.entry_state.get_active_field()
                     .parse()
-                    .unwrap_or(self.get_active_counter().unwrap().get_count())
+                    .unwrap_or_else(|_| self.get_active_counter().unwrap().get_count())
                 );
                 self.entry_state = EntryState::default();
                 self.app_state = AppState::Selection;

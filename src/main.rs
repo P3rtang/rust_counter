@@ -19,7 +19,7 @@ fn main() {
         .expect("Could not create Counters from save file");
     let mut app = app::App::new(1000 / FRAME_RATE, store.clone());
     app = app.start().unwrap();
-    eprintln!("{}", 
+    println!("Debug Info:\n{}", 
         app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")
         .collect::<String>()
     );

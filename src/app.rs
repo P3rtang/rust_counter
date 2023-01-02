@@ -13,7 +13,7 @@ use crossterm::{
 };
 use crate::SAVE_FILE;
 use crate::{counter::{Counter, CounterStore}, TIME_OUT, FRAME_RATE, TICK_SLOWDOWN};
-use crate::ui::{self, UiSize};
+use crate::ui::{self, UiWidth};
 use crate::entry::EntryState;
 
 #[derive(Clone, PartialEq)]
@@ -23,9 +23,9 @@ pub enum AppState {
     Counting(u8),
     AddingNew,
     RenamePhase,
-    Rename,
+    RenameCounter,
     ChangeCount,
-    Delete,
+    DeleteCounter,
     DeletePhase,
     Editing (u8),
 }
@@ -36,7 +36,7 @@ pub struct App {
     pub c_state:          ListState,
     pub phase_list_state: ListState,
     pub entry_state:      EntryState,
-    pub ui_size:          UiSize,
+    pub ui_size:          UiWidth,
     pub time_show_millis: bool,
     tick_rate:            Duration,
     last_interaction:     Instant,
@@ -56,7 +56,7 @@ impl App {
             phase_list_state: ListState::default(),
             entry_state:      EntryState::default(),
             app_state:        AppState::Selection,
-            ui_size:          UiSize::Big,
+            ui_size:          UiWidth::Big,
             running:          true,
             time_show_millis: true,
             is_super_user:    false,
@@ -77,7 +77,6 @@ impl App {
         let mut terminal = Terminal::new(backend).unwrap();
 
         self.c_state.select(Some(0));
-        self.phase_list_state.select(Some(0));
 
         let mut previous_time = Instant::now();
         let mut now_time      : Instant;
@@ -90,6 +89,7 @@ impl App {
                     .increase_time(now_time - previous_time);
             }
             previous_time = Instant::now();
+
 
             // draw all ui elements
             terminal.draw(|f| {
@@ -175,7 +175,7 @@ impl App {
                         _ => {}
                     }
                 }
-                AppState::Counting(_) => {
+                AppState::Counting(n) => {
                     match key.code {
                         KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
                             self.get_unsafe_c_mut().increase_by(1);
@@ -185,8 +185,12 @@ impl App {
                             self.get_unsafe_c_mut().increase_by(-1);
                             self.c_store.to_json(SAVE_FILE)
                         }
-                        KeyCode::Esc       => { self.app_state = AppState::Selection }
-                        KeyCode::Char('q') => { self.app_state = AppState::Selection }
+                        KeyCode::Esc => { self.app_state = AppState::Selection }
+                        KeyCode::Char('q') if n == 0 => { 
+                            self.phase_list_state.select(None);
+                            self.app_state = AppState::Selection 
+                        }
+                        KeyCode::Char('q') if n == 1 => { self.app_state = AppState::PhaseSelect }
                         _ => {}
                     }
                 }
@@ -210,13 +214,13 @@ impl App {
                         _ => {}
                     }
                 }
-                AppState::Rename => {
+                AppState::RenameCounter => {
                     self.rename_key_event(key.code)
                 }
                 AppState::ChangeCount => {
                     self.change_count_key_event(key.code)
                 }
-                AppState::Delete => {
+                AppState::DeleteCounter => {
                     match key.code {
                         KeyCode::Enter => {
                             self.c_store
@@ -263,16 +267,21 @@ impl App {
         let len = self.c_store.len();
         match key {
             KeyCode::Char('q') =>   self.running   = false,
-            KeyCode::Char('n') => { self.app_state = AppState::AddingNew   }
-            KeyCode::Char('d') => { self.app_state = AppState::Delete      }
-            KeyCode::Char('r') => { self.app_state = AppState::Rename      }
-            KeyCode::Char('s') => { self.app_state = AppState::ChangeCount }
-            KeyCode::Char('e') => { self.app_state = AppState::Editing(0)  }
-            KeyCode::Char('f') => { self.app_state = AppState::PhaseSelect }
+            KeyCode::Char('n') => { self.app_state = AppState::AddingNew     }
+            KeyCode::Char('d') => { self.app_state = AppState::DeleteCounter }
+            KeyCode::Char('r') => { self.app_state = AppState::RenameCounter }
+            KeyCode::Char('s') => { self.app_state = AppState::ChangeCount   }
+            KeyCode::Char('e') => { self.app_state = AppState::Editing(0)    }
+            KeyCode::Char('f') => { 
+                self.phase_list_state.select(Some(self.phase_list_state.selected().unwrap_or(0)));
+                self.app_state = AppState::PhaseSelect
+            }
             KeyCode::Enter     => {
                 if self.get_active_counter().unwrap().get_phase_len() > 1 {
+                    self.phase_list_state.select(Some(self.phase_list_state.selected().unwrap_or(0)));
                     self.app_state = AppState::PhaseSelect
                 } else {
+                    self.phase_list_state.select(Some(0));
                     self.app_state = AppState::Counting(0)
                 }
             }
@@ -457,6 +466,7 @@ impl App {
                 self.app_state = AppState::Counting(1); 
             }
             KeyCode::Esc | KeyCode::Char('q') => {
+                self.phase_list_state.select(None);
                 self.app_state = AppState::Selection
             }
             _ => {}

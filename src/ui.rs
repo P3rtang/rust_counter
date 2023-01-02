@@ -2,7 +2,7 @@ use crossterm::event::KeyCode;
 use tui::{
     backend::CrosstermBackend,
     widgets::{Block, Borders, List, ListItem, Paragraph, Gauge},
-    layout::{Layout, Constraint, Direction, Rect, Alignment},
+    layout::{Layout, Constraint, Direction, Rect, Alignment, Margin},
     style::{Style, Color, Modifier},
     Frame
 };
@@ -12,31 +12,49 @@ use crate::app::{App, AppState};
 use crate::entry::Entry;
 use crate::dialog::Dialog;
 
-const BLUE:      Color = Color::Rgb(139, 233, 253);
-const GRAY:      Color = Color::Rgb(100, 114, 125);
-const MAGENTA:   Color = Color::Rgb(255, 121, 198);
-const DARK_GRAY: Color = Color::Rgb(40, 42, 54);
-const GREEN:     Color = Color::Rgb(80, 250, 123);
-const ORANGE:    Color = Color::Rgb(255, 184, 108);
+const BLUE:       Color = Color::Rgb(139, 233, 253);
+const GRAY:       Color = Color::Rgb(100, 114, 125);
+const MAGENTA:    Color = Color::Rgb(255, 121, 198);
+const DARK_GRAY:  Color = Color::Rgb( 40,  42,  54);
+const GREEN:      Color = Color::Rgb( 80, 250, 123);
+const ORANGE:     Color = Color::Rgb(255, 184, 108);
 const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
-const YELLOW: Color = Color::Rgb(241, 250, 140);
+const YELLOW:     Color = Color::Rgb(241, 250, 140);
 
 
 #[derive(PartialEq)]
-pub enum UiSize {
+pub enum UiWidth {
+    VerySmall,
     Small,
     Big,
 }
 
 pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-                Constraint::Min(15),
-                Constraint::Percentage(80),
-            ].as_ref()
-        )
-        .split(f.size());
+    app.ui_size = match f.size().width {
+        0..=27 => UiWidth::VerySmall,
+        28..=60 => UiWidth::Small,
+        _ => UiWidth::Big,
+    };
+    let chunks = match app.ui_size {
+        UiWidth::Small => { 
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(15), Constraint::Length(0), Constraint::Percentage(80)].as_ref())
+                .split(f.size())
+        }
+        UiWidth::Big => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(24), Constraint::Percentage(16), Constraint::Percentage(60)].as_ref())
+                .split(f.size())
+        }
+        UiWidth::VerySmall => {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(100)])
+                .split(f.size())
+        }
+    };
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -44,100 +62,13 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
                 Constraint::Min(5),
             ].as_ref()
         )
-        .split(chunks[1]);
+        .split(chunks[chunks.len() - 1]);
 
-    if app.ui_size == UiSize::Big && app.get_active_counter().is_some() {
-        let counter = app.get_unsafe_counter();
-        let chunk = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(4), Constraint::Length(4)].as_ref())
-            .split(right_chunks[0]);
 
-        let gauge_block = Block::default()
-            .borders(Borders::TOP.complement())
-            .style(Style::default().fg(Color::Black));
-
-        let progress = counter.get_progress();
-        let color: Color;
-        if progress < 0.5 { color = GREEN }
-        else if counter.get_count() < counter.get_progress_odds() as i32 { color = YELLOW }
-        else if progress < 0.75 { color = ORANGE }
-        else { color = BRIGHT_RED }
-
-        let progress_bar = Gauge::default()
-            .gauge_style(Style::default().fg(color).bg(Color::Black).add_modifier(Modifier::BOLD))
-            .block(gauge_block)
-            .ratio(progress)
-            .label(format!("{:.3}", progress * 100.0));
-        f.render_widget(progress_bar, chunk[1]);
-    }
-
-    let state = app.app_state.clone();
-
-    let mut list_block = Block::default()
-        .title("Counters")
-        .borders(Borders::ALL)
-        .style(Style::default().fg(BLUE));
-    let mut paragraph_block = Block::default()
-        .borders(Borders::ALL)
-        .border_attach(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::White));
-    let time_block = Block::default()
-        .borders(Borders::TOP.complement());
-
-    if let AppState::Counting(num) = app.app_state {
-        list_block = list_block.style(Style::default().fg(Color::White)).title("");
-        let title = match num {
-            0 => app.get_unsafe_counter().get_name(),
-            1 => app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)),
-            _ => "".to_string()
-        };
-        paragraph_block = paragraph_block
-            .border_style(Style::default().fg(BLUE))
-            .title(title);
-    }
-
-    let mut list = app.c_store
-        .get_counters()
-        .iter()
-        .map(|counter| ListItem::new(counter.borrow().get_name()))
-        .collect::<Vec<ListItem>>();
-
-    let mut active_count = app.get_active_counter().map(|c| c.get_count()).unwrap_or(0);
-    let mut active_time  = app.get_active_counter().map(|c| c.get_time()).unwrap_or(Duration::default());
-    let mut list_state   = &mut app.c_state;
-
-    if  state == AppState::PhaseSelect ||
-        state == AppState::RenamePhase || 
-        state == AppState::Counting(1)  
-    {
-        list = app.get_active_counter().unwrap()
-            .get_phases().iter()
-            .map(|phase| ListItem::new(phase.get_name()))
-            .collect();
-
-        active_count = app.get_unsafe_counter().get_nphase_count(app.phase_list_state.selected().unwrap_or(0));
-        active_time  = app.get_unsafe_counter().get_nphase_time(app.phase_list_state.selected().unwrap_or(0));
-        list_state   = &mut app.phase_list_state
-    }
-
-    let counter_list = create_list(list, list_block);
-
-    let paragraph = Paragraph::new(format_paragraph(active_count.to_string()))
-        .block(paragraph_block)
-        .alignment(Alignment::Center);
-
-    let paragraph_time = Paragraph::new(
-            format_paragraph(
-                format_duration(active_time, app.time_show_millis)
-            )
-        )
-        .block(time_block)
-        .alignment(Alignment::Center);
-
-    f.render_stateful_widget(counter_list, chunks[0], list_state);
-    f.render_widget(paragraph, right_chunks[0]);
-    f.render_widget(paragraph_time, right_chunks[1]);
+    draw_counter_list(f, app, chunks[0]);
+    draw_phase_list(f, app, &chunks);
+    draw_text_boxes(f, app, &right_chunks);
+    draw_progress_gauge(f, app, &right_chunks);
 
     // if any the app is in an entry state draw them last so they go on top
     match app.app_state {
@@ -148,7 +79,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
             let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)));
             draw_entry(f, &mut app.entry_state, &phase_title, (50, 10));
         }
-        AppState::Rename | AppState::Editing(0) => { 
+        AppState::RenameCounter | AppState::Editing(0) => { 
             draw_entry(f, &mut app.entry_state, "Change Name", (50, 10)) 
         }
         AppState::ChangeCount | AppState::Editing(1) => {
@@ -157,7 +88,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         AppState::Editing(2) => {
             draw_entry(f, &mut app.entry_state, "Change Time", (50, 10));
         }
-        AppState::Delete => {
+        AppState::DeleteCounter => {
             let name = app.get_active_counter().unwrap().get_name();
             draw_delete_dialog(f, &name)
         }
@@ -183,7 +114,8 @@ fn format_duration(duration: Duration, show_millis: bool) -> String {
     return format!("{:02}:{:02}:{:02},***", hours, mins % 60, secs % 60)
 }
 
-fn format_paragraph(mut text: String) -> String {
+fn format_paragraph(text: impl Into<String>) -> String {
+    let mut text = text.into();
     text.insert(0, '\n');
     text
 }
@@ -229,4 +161,110 @@ fn create_list<'a>(list: Vec<ListItem<'a>>, block: Block<'a>) -> List<'a> {
         .highlight_style(Style::default().fg(MAGENTA))
         .highlight_symbol(" > ");
     counter_list
+}
+
+fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: Rect) {
+    // if the app uisize is small hide the main counter list when phases are displayed
+    // if the list is displayed it should be blue when it is the active widget
+    use AppState::*;
+    let (color, title) = match app.app_state {
+        PhaseSelect | DeletePhase | RenamePhase | Counting(1) 
+            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+        PhaseSelect | DeletePhase | RenamePhase | Counting(_) => (Color::White, ""),
+        _ => (BLUE, "Counters"),
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(color));
+    let list_widget = create_list(app.c_store.get_counters().iter().map(|c| ListItem::new(c.borrow().get_name())).collect(), block);
+    f.render_stateful_widget(list_widget, area, &mut app.c_state)
+}
+
+fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+    use AppState::*;
+    let (color, title) = match app.app_state {
+        Selection | DeleteCounter | RenameCounter | ChangeCount | Counting(0) | AddingNew | Editing(_) 
+            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+        Selection | DeleteCounter | RenameCounter | ChangeCount | Counting(_) | AddingNew | Editing(_) => (Color::White, ""),
+        _ => (BLUE, "Phases")
+    };
+
+    let mut rect_ind = 1;
+    if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(color));
+    let list_widget = create_list(app.get_unsafe_counter().get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block);
+    f.render_stateful_widget(list_widget, area[rect_ind], &mut app.phase_list_state)
+}
+
+fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+    use AppState::*;
+    let (color, title) = match app.app_state {
+        Counting(_) => (BLUE, format!("{} - {}", app.get_unsafe_counter().get_name(), app.get_unsafe_counter().get_phase_name(0))),
+        _ if app.ui_size == UiWidth::VerySmall => return,
+        _ => (Color::White, "".to_string())
+    };
+
+    let (active_count, active_time) = match app.app_state {
+        PhaseSelect | DeletePhase | RenamePhase | Counting(1) => (
+            app.get_active_counter().map_or(0,                   |c| c.get_nphase_count (app.phase_list_state.selected().unwrap_or(0))),
+            app.get_active_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.phase_list_state.selected().unwrap_or(0))),
+        ),
+        _ => (
+            app.get_active_counter().map_or(0,                   |c| c.get_count()),
+            app.get_active_counter().map_or(Duration::default(), |c| c.get_time()),
+        )
+    };
+
+    let paragraph_block = Block::default()
+        .borders(Borders::ALL)
+        .border_attach(Borders::BOTTOM)
+        .title(title)
+        .border_style(Style::default().fg(color));
+    let time_block = Block::default()
+        .borders(Borders::TOP.complement());
+
+    let paragraph = Paragraph::new(format_paragraph(active_count.to_string()))
+        .block(paragraph_block)
+        .alignment(Alignment::Center);
+
+    let paragraph_time = Paragraph::new(format_paragraph(format_duration(active_time, app.time_show_millis)))
+        .block(time_block)
+        .alignment(Alignment::Center);
+    f.render_widget(paragraph, area[0]);
+    f.render_widget(paragraph_time, area[1]);
+}
+
+fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &Vec<Rect>) {
+    use AppState::*;
+
+    let progress = app.get_active_counter().map_or(0.0, |c| c.get_progress());
+    match app.app_state {
+        Counting(_) if app.ui_size == UiWidth::VerySmall => {}
+        _ if app.ui_size == UiWidth::VerySmall => return,
+        _ => {}
+    }
+    
+    let mut color = GREEN;
+    if progress < 0.5 {}
+    else if app.get_unsafe_counter().get_count() < app.get_unsafe_counter().get_progress_odds() as i32 { color = YELLOW }
+    else if progress < 0.75 { color = ORANGE }
+    else { color = BRIGHT_RED }
+
+    let chunk = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(4)].as_ref())
+        .split(area[0]);
+
+    let progress_bar = Gauge::default()
+        .gauge_style(Style::default().fg(color).bg(Color::Black).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::complement(Borders::TOP)).border_attach(Borders::BOTTOM))
+        .ratio(progress)
+        .label(format!("{:.3}", progress * 100.0));
+    f.render_widget(progress_bar, chunk[1]);
 }

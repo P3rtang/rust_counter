@@ -34,26 +34,23 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
         28..=60 => UiWidth::Small,
         _ => UiWidth::Big,
     };
-    let chunks = match app.ui_size {
+    let constraints = match app.ui_size {
         UiWidth::Small => { 
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(15), Constraint::Length(0), Constraint::Percentage(80)].as_ref())
-                .split(f.size())
+            vec![Constraint::Min(15), Constraint::Length(0), Constraint::Percentage(80)]
         }
         UiWidth::Big => {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(24), Constraint::Percentage(16), Constraint::Percentage(60)].as_ref())
-                .split(f.size())
+            vec![Constraint::Percentage(20), Constraint::Percentage(20), Constraint::Percentage(60)]
         }
         UiWidth::VerySmall => {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(100)])
-                .split(f.size())
+            vec![Constraint::Percentage(100)]
         }
     };
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(f.size());
+
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -183,6 +180,7 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppState::*;
+    if app.get_active_counter().is_none() { return }
     let (color, title) = match app.app_state {
         Selection(_) | Counting(0) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,

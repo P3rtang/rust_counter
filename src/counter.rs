@@ -205,7 +205,7 @@ impl Iterator for CounterStore {
 enum ProgressKind {
     Normal(u64),
     DexNav,
-    Sos,
+    Sos(bool),
 }
 
 
@@ -213,28 +213,49 @@ enum ProgressKind {
 pub struct Progress {
     progress: f64,
     kind:     ProgressKind,
+    has_charm: bool,
 }
 
 impl Progress {
-    fn new(kind: ProgressKind) -> Self {
-        Progress { progress: 0.0, kind }
+    fn new(kind: ProgressKind, has_charm: bool) -> Self {
+        Progress { progress: 0.0, kind, has_charm }
     }
-    fn calc_progress(&mut self, steps: u64) -> f64 {
+    fn calc_progress(&mut self, mut steps: u64) -> f64 {
         match self.kind {
             ProgressKind::Normal(odds) => {
-                let neg_chance = (odds-1) as f64 / odds as f64;
-                self.progress = 1f64 - neg_chance.powf(steps as f64);
-                self.progress
+                let mut rolls = 1;
+                if self.has_charm { rolls += 2 }
+                for _ in 0..rolls {
+                    let neg_chance = (odds-1) as f64 / odds as f64;
+                    self.progress = 1f64 - neg_chance.powi(steps as i32);
+                }
             },
             ProgressKind::DexNav => todo!(),
-            ProgressKind::Sos => todo!(),
+            ProgressKind::Sos(reset) => {
+                if reset { steps %= 256 }
+
+                let mut rolls = 1;
+                if self.has_charm { rolls += 2 }
+
+                match steps {
+                    0 ..=10 => {}
+                    11..=20 => rolls += 4,
+                    21..=30 => rolls += 8,
+                    31..    => rolls += 12,
+                }
+                for _ in 0..rolls {
+                    let neg_chance: f64 = 4095.0 / 4096.0;
+                    self.progress = (1f64 - self.progress) * neg_chance.powi(rolls);
+                }
+            }
         }
+        return self.progress
     }
 }
 
 impl Default for Progress {
     fn default() -> Self {
-        Self { progress: 0.0, kind: ProgressKind::Normal(8192) }
+        Self { progress: 0.0, kind: ProgressKind::Normal(8192), has_charm: false }
     }
 }
 

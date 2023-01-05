@@ -62,7 +62,7 @@ impl Counter {
         self.name.clone()
     }
 
-    /// Sets the time of this [`Counter`].
+    /// Sets the time of this `Counter`.
     /// time in minutes
     pub fn set_time(&mut self, time: u64) {
         self.time = Duration::from_secs(time * 60)

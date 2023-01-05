@@ -7,7 +7,7 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::{entry::EntryState, app::{App, AppState, DialogState as DS, EditingState as ES}};
+use crate::{entry::EntryState, app::{App, AppMode, DialogState as DS, EditingState as ES}};
 use crate::entry::Entry;
 use crate::dialog::Dialog;
 
@@ -67,30 +67,30 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     draw_progress_gauge(f, app, &right_chunks);
 
     // if any the app is in an entry state draw them last so they go on top
-    match app.app_state {
-        AppState::Selection(DS::AddNew) => {
-            draw_entry(f, &mut app.entry_state, "Name new Counter", (50, 10))
+    match app.get_mode() {
+        AppMode::Selection(DS::AddNew) => {
+            draw_entry(f, &mut app.get_entry_state(0), "Name new Counter", (50, 10))
         }
-        AppState::PhaseSelect(DS::Editing(_)) => {
-            let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.phase_list_state.selected().unwrap_or(0)));
-            draw_entry(f, &mut app.entry_state, &phase_title, (50, 10));
+        AppMode::PhaseSelect(DS::Editing(_)) => {
+            let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.get_list_state(1).selected().unwrap_or(0)));
+            draw_entry(f, &mut app.get_entry_state(0), &phase_title, (50, 10));
         }
-        AppState::Selection(DS::Editing(ES::Rename(_))) => {
-            draw_entry(f, &mut app.entry_state, "Change Name", (50, 10)) 
+        AppMode::Selection(DS::Editing(ES::Rename(_))) => {
+            draw_entry(f, &mut app.get_entry_state(0), "Change Name", (50, 10)) 
         }
-        AppState::Selection(DS::Editing(ES::ChCount(_))) => {
-            draw_entry(f, &mut app.entry_state, "Change Count", (50, 10))
+        AppMode::Selection(DS::Editing(ES::ChCount(_))) => {
+            draw_entry(f, &mut app.get_entry_state(0), "Change Count", (50, 10))
         }
-        AppState::Selection(DS::Editing(ES::ChTime(_))) => {
-            draw_entry(f, &mut app.entry_state, "Change Time", (50, 10));
+        AppMode::Selection(DS::Editing(ES::ChTime(_))) => {
+            draw_entry(f, &mut app.get_entry_state(0), "Change Time", (50, 10));
         }
-        AppState::Selection(DS::Delete) => {
+        AppMode::Selection(DS::Delete) => {
             let name = app.get_active_counter().unwrap().get_name();
             draw_delete_dialog(f, &name)
         }
-        AppState::PhaseSelect(DS::Delete) =>  {
+        AppMode::PhaseSelect(DS::Delete) =>  {
             if app.get_unsafe_counter().get_phase_count() > 1 {
-                let name = app.get_active_counter().unwrap().get_phase_name(app.c_state.selected().unwrap_or(1));
+                let name = app.get_active_counter().unwrap().get_phase_name(app.get_list_state(0).selected().unwrap_or(1));
                 draw_delete_dialog(f, &name)
             }
         }
@@ -162,8 +162,8 @@ fn create_list<'a>(list: Vec<ListItem<'a>>, block: Block<'a>) -> List<'a> {
 fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: Rect) {
     // if the app uisize is small hide the main counter list when phases are displayed
     // if the list is displayed it should be blue when it is the active widget
-    use AppState::*;
-    let (color, title) = match app.app_state {
+    use AppMode::*;
+    let (color, title) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
         PhaseSelect(_) | Counting(_) => (Color::White, ""),
@@ -175,13 +175,13 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
         .title(title)
         .style(Style::default().fg(color));
     let list_widget = create_list(app.c_store.get_counters().iter().map(|c| ListItem::new(c.borrow().get_name())).collect(), block);
-    f.render_stateful_widget(list_widget, area, &mut app.c_state)
+    f.render_stateful_widget(list_widget, area, &mut app.get_mut_list_state(0))
 }
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
-    use AppState::*;
+    use AppMode::*;
     if app.get_active_counter().is_none() { return }
-    let (color, title) = match app.app_state {
+    let (color, title) = match app.get_mode() {
         Selection(_) | Counting(0) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
         Selection(_) | Counting(_) => (Color::White, ""),
@@ -196,21 +196,21 @@ fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
         .title(title)
         .style(Style::default().fg(color));
     let list_widget = create_list(app.get_unsafe_counter().get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block);
-    f.render_stateful_widget(list_widget, area[rect_ind], &mut app.phase_list_state)
+    f.render_stateful_widget(list_widget, area[rect_ind], &mut app.get_mut_list_state(1))
 }
 
 fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
-    use AppState::*;
-    let (color, title) = match app.app_state {
+    use AppMode::*;
+    let (color, title) = match app.get_mode() {
         Counting(_) => (BLUE, format!("{} - {}", app.get_unsafe_counter().get_name(), app.get_unsafe_counter().get_phase_name(0))),
         _ if app.ui_size == UiWidth::VerySmall => return,
         _ => (Color::White, "".to_string())
     };
 
-    let (active_count, active_time) = match app.app_state {
+    let (active_count, active_time) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) => (
-            app.get_active_counter().map_or(0,                   |c| c.get_nphase_count (app.phase_list_state.selected().unwrap_or(0))),
-            app.get_active_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.phase_list_state.selected().unwrap_or(0))),
+            app.get_active_counter().map_or(0,                   |c| c.get_nphase_count (app.get_list_state(1).selected().unwrap_or(0))),
+            app.get_active_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.get_list_state(1).selected().unwrap_or(0))),
         ),
         _ => (
             app.get_active_counter().map_or(0,                   |c| c.get_count()),
@@ -238,10 +238,10 @@ fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
 }
 
 fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
-    use AppState::*;
+    use AppMode::*;
 
     let progress = app.get_active_counter().map_or(0.0, |c| c.get_progress());
-    match app.app_state {
+    match app.get_mode() {
         Counting(_) if app.ui_size == UiWidth::VerySmall => {}
         _ if app.ui_size == UiWidth::VerySmall => return,
         _ => {}

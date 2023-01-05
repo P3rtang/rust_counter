@@ -7,6 +7,7 @@ use tui::{
     widgets::{StatefulWidget, Widget},
 };
 
+#[derive(Clone)]
 pub struct EntryState {
     fields: Vec<String>,
     active_field: usize,

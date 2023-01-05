@@ -18,10 +18,16 @@ use DialogState as DS;
 use EditingState as ES;
 
 #[derive(Clone, PartialEq, Eq)]
-pub enum AppState {
+pub enum AppMode {
     Selection(DialogState),
     PhaseSelect(DialogState),
     Counting(u8),
+}
+
+impl Default for AppMode {
+    fn default() -> Self {
+        Self::Selection(DS::None)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -40,37 +46,31 @@ pub enum EditingState {
 }
 
 pub struct App {
-    pub app_state: AppState,
-    pub c_store: CounterStore,
-    pub c_state: ListState,
-    pub phase_list_state: ListState,
-    pub entry_state: EntryState,
-    pub ui_size: UiWidth,
+    pub state:            AppState<2, 1>,
+    pub c_store:          CounterStore,
+    pub ui_size:          UiWidth,
     pub time_show_millis: bool,
-    tick_rate: Duration,
-    last_interaction: Instant,
-    running: bool,
-    is_super_user: bool,
-    cursor_pos: Option<(u16, u16)>,
-    pub debug_info: Vec<String>,
+    tick_rate:            Duration,
+    last_interaction:     Instant,
+    running:              bool,
+    is_super_user:        bool,
+    cursor_pos:           Option<(u16, u16)>,
+    pub debug_info:       Vec<String>,
 }
 
 impl App {
     pub fn new(tick_rate: u64, counter_store: CounterStore) -> Self {
         App {
-            tick_rate: Duration::from_millis(tick_rate),
+            state:            AppState::default(),
+            tick_rate:        Duration::from_millis(tick_rate),
             last_interaction: Instant::now(),
-            c_store: counter_store,
-            c_state: ListState::default(),
-            phase_list_state: ListState::default(),
-            entry_state: EntryState::default(),
-            app_state: AppState::Selection(DS::None),
-            ui_size: UiWidth::Big,
-            running: true,
+            c_store:          counter_store,
+            ui_size:          UiWidth::Big,
+            running:          true,
             time_show_millis: true,
-            is_super_user: false,
-            cursor_pos: None,
-            debug_info: vec![],
+            is_super_user:    false,
+            cursor_pos:       None,
+            debug_info:       vec![],
         }
     }
     pub fn set_super_user(mut self, is_super: bool) -> Self {
@@ -85,7 +85,7 @@ impl App {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        self.c_state.select(Some(0));
+        self.get_mut_list_state(0).select(Some(0));
 
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
@@ -93,7 +93,7 @@ impl App {
         while self.running {
             // timing the execution time of the loop and add it to the counter time
             now_time = Instant::now();
-            if let AppState::Counting(_) = self.app_state {
+            if let AppMode::Counting(_) = self.get_mode() {
                 self.get_unsafe_c_mut()
                     .increase_time(now_time - previous_time);
             }
@@ -139,7 +139,7 @@ impl App {
     }
 
     pub fn get_active_counter(&self) -> Option<Ref<Counter>> {
-        self.c_store.get(self.c_state.selected().unwrap_or(0))
+        self.c_store.get(self.get_list_state(0).selected().unwrap_or(0))
     }
 
     pub fn get_unsafe_counter(&self) -> Ref<Counter> {
@@ -147,7 +147,7 @@ impl App {
     }
 
     pub fn get_active_c_mut(&self) -> Option<RefMut<Counter>> {
-        self.c_store.get_mut(self.c_state.selected().unwrap_or(0))
+        self.c_store.get_mut(self.get_list_state(0).selected().unwrap_or(0))
     }
 
     pub fn get_unsafe_c_mut(&self) -> RefMut<Counter> {
@@ -169,18 +169,46 @@ impl App {
         Ok(self.c_store)
     }
 
+    pub fn get_mode(&self) -> &AppMode {
+        return &self.state.mode
+    }
+
+    pub fn set_mode(&mut self, mode: AppMode) {
+        self.state.mode = mode;
+    }
+
+    pub fn get_list_state(&self, index: usize) -> &ListState {
+        return self.state.list_states.get(index).unwrap()
+    }
+
+    pub fn get_mut_list_state(&mut self, index: usize) -> &mut ListState {
+        return self.state.list_states.get_mut(index).unwrap()
+    }
+
+    pub fn list_select(&mut self, index: usize, select_index: usize) {
+        return self.state.list_states[index].select(Some(select_index))
+    }
+
+    pub fn get_entry_state(&mut self, index: usize) -> &mut EntryState {
+        return self.state.entry_state.get_mut(index).unwrap()
+    }
+
+    pub fn reset_entry_state(&mut self, index: usize) {
+        self.state.entry_state[index] = EntryState::default();
+    }
+
     fn handle_event(&mut self) {
         if let Event::Key(key) = event::read().unwrap() {
-            match self.app_state {
-                AppState::Selection(DS::None) if self.c_store.len() > 0 => {
+            match self.get_mode() {
+                AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
                     self.selection_key_event(key.code)
                 }
-                AppState::Selection(DS::None) => match key.code {
+                AppMode::Selection(DS::None) => match key.code {
                     KeyCode::Char('q') => self.running = false,
-                    KeyCode::Char('n') => self.app_state = AppState::Selection(DS::AddNew),
+                    KeyCode::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
                     _ => {}
                 },
-                AppState::Counting(n) => match key.code {
+                AppMode::Counting(n) => match key.code {
                     KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
                         self.get_unsafe_c_mut().increase_by(1);
                         self.c_store.to_json(SAVE_FILE)
@@ -189,71 +217,71 @@ impl App {
                         self.get_unsafe_c_mut().increase_by(-1);
                         self.c_store.to_json(SAVE_FILE)
                     }
-                    KeyCode::Esc => self.app_state = AppState::Selection(DS::None),
-                    KeyCode::Char('q') if n == 0 => {
-                        self.phase_list_state.select(None);
-                        self.app_state = AppState::Selection(DS::None)
+                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
+                    KeyCode::Char('q') if n == &0 => {
+                        self.list_select(1, 0);
+                        self.set_mode(AppMode::Selection(DS::None))
                     }
-                    KeyCode::Char('q') if n == 1 => {
-                        self.app_state = AppState::PhaseSelect(DS::None)
+                    KeyCode::Char('q') if n == &1 => {
+                        self.set_mode(AppMode::PhaseSelect(DS::None)) 
                     }
                     _ => {}
                 },
-                AppState::Selection(DS::AddNew) => match key.code {
+                AppMode::Selection(DS::AddNew) => match key.code {
                     KeyCode::Esc => {
-                        self.app_state = AppState::Selection(DS::None);
-                        self.entry_state = EntryState::default();
+                        self.set_mode(AppMode::Selection(DS::None));
+                        self.reset_entry_state(0);
                     }
                     KeyCode::Enter => {
-                        self.c_store
-                            .push(Counter::new(self.entry_state.get_active_field()));
-                        self.entry_state = EntryState::default();
-                        self.app_state = AppState::Selection(DS::None);
+                        let name = self.get_entry_state(0).get_active_field().clone();
+                        self.c_store.push(Counter::new(name));
+                        self.reset_entry_state(0);
+                        self.set_mode(AppMode::Selection(DS::None));
                     }
-                    KeyCode::Char(charr) if charr.is_ascii() => self.entry_state.push(charr),
+                    KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
                     KeyCode::Backspace => {
-                        self.entry_state.pop();
+                        self.get_entry_state(0).pop();
                     }
                     _ => {}
                 },
-                AppState::Selection(DS::Editing(ES::Rename(mode))) => 
-                    self.rename_key_event(key.code, mode),
-                AppState::Selection(DS::Editing(ES::ChCount(mode))) => 
-                    self.change_count_key_event(key.code, mode),
-                AppState::Selection(DS::Editing(ES::ChTime(mode))) => {
-                    self.change_time_key_event(key.code, mode)
+                AppMode::Selection(DS::Editing(ES::Rename(mode))) => 
+                    self.rename_key_event(key.code, *mode),
+                AppMode::Selection(DS::Editing(ES::ChCount(mode))) => 
+                    self.change_count_key_event(key.code, *mode),
+                AppMode::Selection(DS::Editing(ES::ChTime(mode))) => {
+                    self.change_time_key_event(key.code, *mode)
                 }
-                AppState::Selection(DS::Delete) => match key.code {
+                AppMode::Selection(DS::Delete) => match key.code {
                     KeyCode::Enter => {
-                        self.c_store.remove(self.c_state.selected().unwrap_or(0));
-                        if self.c_state.selected().unwrap_or(0) >= self.c_store.len()
+                        self.c_store.remove(self.get_list_state(0).selected().unwrap_or(0));
+                        if self.get_list_state(0).selected().unwrap_or(0) >= self.c_store.len()
                             && self.c_store.len() > 0
                         {
-                            self.c_state.select(Some(self.c_store.len() - 1));
+                            self.list_select(0, self.c_store.len() - 1);
                         }
-                        self.app_state = AppState::Selection(DS::None)
+                        self.set_mode(AppMode::Selection(DS::None))
                     }
-                    KeyCode::Esc => self.app_state = AppState::Selection(DS::None),
+                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
                     _ => {}
                 },
-                AppState::PhaseSelect(DS::Editing(_)) => {
+                AppMode::PhaseSelect(DS::Editing(_)) => {
                     self.rename_phase_key_event(key.code)
                 }
-                AppState::PhaseSelect(DS::Delete) => match key.code {
+                AppMode::PhaseSelect(DS::Delete) => match key.code {
                     KeyCode::Enter => {
                         self.get_unsafe_c_mut()
-                            .remove_phase(self.c_state.selected().unwrap_or(0) + 1);
-                        self.app_state = AppState::Selection(DS::None);
+                            .remove_phase(self.get_list_state(0).selected().unwrap_or(0) + 1);
+                        self.set_mode(AppMode::Selection(DS::None));
 
-                        let selection = self.phase_list_state.selected().unwrap_or(0);
+                        let selection = self.get_list_state(1).selected().unwrap_or(0);
                         if selection >= self.get_unsafe_counter().get_phase_len() {
-                            self.phase_list_state.select(Some(selection - 1))
+                            self.list_select(1, selection - 1)
                         }
                     }
-                    KeyCode::Esc => self.app_state = AppState::Selection(DS::None),
+                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
                     _ => {}
                 },
-                AppState::PhaseSelect(_) => self.phase_select_key_event(key.code),
+                AppMode::PhaseSelect(_) => self.phase_select_key_event(key.code),
             }
         }
     }
@@ -262,38 +290,36 @@ impl App {
         let len = self.c_store.len();
         match key {
             KeyCode::Char('q') => self.running = false,
-            KeyCode::Char('n') => self.app_state = AppState::Selection(DS::AddNew),
-            KeyCode::Char('d') => self.app_state = AppState::Selection(DS::Delete),
+            KeyCode::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
+            KeyCode::Char('d') => self.set_mode(AppMode::Selection(DS::Delete)),
             KeyCode::Char('r') => 
-                self.app_state = AppState::Selection(DS::Editing(ES::Rename(false))),
+                self.set_mode(AppMode::Selection(DS::Editing(ES::Rename(false)))),
             KeyCode::Char('e') => 
-                self.app_state = AppState::Selection(DS::Editing(ES::Rename(true))),
+                self.set_mode(AppMode::Selection(DS::Editing(ES::Rename(true)))),
             KeyCode::Char('f') => {
-                self.phase_list_state
-                    .select(Some(self.phase_list_state.selected().unwrap_or(0)));
-                self.app_state = AppState::PhaseSelect(DS::None)
+                self.list_select(1, self.get_list_state(1).selected().unwrap_or(0));
+                self.set_mode(AppMode::PhaseSelect(DS::None)) 
             }
             KeyCode::Enter => {
                 if self.get_active_counter().unwrap().get_phase_len() > 1 {
-                    self.phase_list_state
-                        .select(Some(self.phase_list_state.selected().unwrap_or(0)));
-                    self.app_state = AppState::PhaseSelect(DS::None)
+                    self.list_select(1, self.get_list_state(1).selected().unwrap_or(0));
+                    self.set_mode(AppMode::PhaseSelect(DS::None))
                 } else {
-                    self.phase_list_state.select(Some(0));
-                    self.app_state = AppState::Counting(0)
+                    self.list_select(1, 0);
+                    self.set_mode(AppMode::Counting(0))
                 }
             }
             KeyCode::Up => {
-                let mut selected = self.c_state.selected().unwrap();
+                let mut selected = self.get_list_state(0).selected().unwrap();
                 selected += len - 1;
                 selected %= len;
-                self.c_state.select(Some(selected as usize));
+                self.list_select(0, selected);
             }
             KeyCode::Down => {
-                let mut selected = self.c_state.selected().unwrap();
+                let mut selected = self.get_list_state(0).selected().unwrap();
                 selected += 1;
                 selected %= len;
-                self.c_state.select(Some(selected as usize));
+                self.list_select(0, selected);
             }
             _ => {}
         }
@@ -301,23 +327,23 @@ impl App {
 
     fn rename_key_event(&mut self, key: KeyCode, in_editing_mode: bool) {
         match key {
-            KeyCode::Char(charr) if charr.is_ascii() => self.entry_state.push(charr),
+            KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
-                self.entry_state.pop();
+                self.get_entry_state(0).pop();
             }
             KeyCode::Enter => {
-                self.get_unsafe_c_mut()
-                    .set_name(self.entry_state.get_active_field());
-                self.entry_state = EntryState::default();
+                let name = self.get_entry_state(0).get_active_field().clone();
+                self.get_unsafe_c_mut().set_name(&name);
+                self.reset_entry_state(0);
                 if in_editing_mode { 
-                    self.app_state = AppState::Selection(DS::Editing(ES::ChCount(true)))
+                    self.set_mode(AppMode::Selection(DS::Editing(ES::ChCount(true))))
                 } else {
-                    self.app_state = AppState::Selection(DS::None);
+                    self.set_mode(AppMode::Selection(DS::None))
                 }
             }
             KeyCode::Esc => {
-                self.app_state = AppState::Selection(DS::None);
-                self.entry_state = EntryState::default();
+                self.set_mode(AppMode::Selection(DS::None));
+                self.reset_entry_state(0);
             }
             _ => {}
         }
@@ -325,27 +351,26 @@ impl App {
 
     fn change_count_key_event(&mut self, key: KeyCode, in_editing_mode: bool) {
         match key {
-            KeyCode::Char(charr) if charr.is_numeric() => self.entry_state.push(charr),
+            KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
-                self.entry_state.pop();
+                self.get_entry_state(0).pop();
             }
             KeyCode::Enter => {
-                self.get_unsafe_c_mut().set_count(
-                    self.entry_state
-                        .get_active_field()
-                        .parse()
-                        .unwrap_or_else(|_| self.get_active_counter().unwrap().get_count()),
-                );
-                self.entry_state = EntryState::default();
+                let count = self.get_entry_state(0)
+                    .get_active_field()
+                    .parse()
+                    .unwrap_or_else(|_| self.get_active_counter().unwrap().get_count());
+                self.get_unsafe_c_mut().set_count(count);
+                self.reset_entry_state(0);
                 if in_editing_mode { 
-                    self.app_state = AppState::Selection(DS::Editing(ES::ChTime(true)))
+                    self.set_mode(AppMode::Selection(DS::Editing(ES::ChTime(true))))
                 } else {
-                    self.app_state = AppState::Selection(DS::None);
+                    self.set_mode(AppMode::Selection(DS::None))
                 }
             }
             KeyCode::Esc => {
-                self.app_state = AppState::Selection(DS::None);
-                self.entry_state = EntryState::default();
+                self.set_mode(AppMode::Selection(DS::None));
+                self.reset_entry_state(0);
             }
             _ => {}
         }
@@ -353,42 +378,40 @@ impl App {
 
     fn change_time_key_event(&mut self, key: KeyCode, _in_editing_mode: bool) {
         match key {
-            KeyCode::Char(charr) if charr.is_numeric() => self.entry_state.push(charr),
+            KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
-                self.entry_state.pop();
+                self.get_entry_state(0).pop();
             }
             KeyCode::Enter => {
-                self.get_unsafe_c_mut().set_time(
-                    self.entry_state
-                        .get_active_field()
-                        .parse()
-                        .unwrap_or(self.get_unsafe_counter().get_time().as_secs() / 60),
-                );
-                self.entry_state = EntryState::default();
-                self.app_state = AppState::Selection(DS::None);
+                let time = self.get_entry_state(0)
+                    .get_active_field()
+                    .parse()
+                    .unwrap_or(self.get_unsafe_counter().get_time().as_secs() / 60);
+                self.get_unsafe_c_mut().set_time(time);
+                self.reset_entry_state(0);
+                self.set_mode(AppMode::Selection(DS::None))
             }
             KeyCode::Esc => {
-                self.entry_state = EntryState::default();
-                self.app_state = AppState::Selection(DS::None);
+                self.reset_entry_state(0);
+                self.set_mode(AppMode::Selection(DS::None))
             }
             _ => {}
         }
     }
     fn rename_phase_key_event(&mut self, key: KeyCode) {
         match key {
-            KeyCode::Char(charr) if charr.is_ascii() => self.entry_state.push(charr),
-            KeyCode::Backspace => self.entry_state.pop(),
+            KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+            KeyCode::Backspace => self.get_entry_state(0).pop(),
             KeyCode::Enter => {
-                self.get_unsafe_c_mut().set_phase_name(
-                    self.phase_list_state.selected().unwrap_or(0),
-                    self.entry_state.get_active_field(),
-                );
-                self.entry_state = EntryState::default();
-                self.app_state = AppState::PhaseSelect(DS::None);
+                let phase = self.get_list_state(1).selected().unwrap_or(0);
+                let name  = self.get_entry_state(0).get_active_field().clone();
+                self.get_unsafe_c_mut().set_phase_name(phase, name);
+                self.reset_entry_state(0);
+                self.set_mode(AppMode::PhaseSelect(DS::None))
             }
             KeyCode::Esc => {
-                self.entry_state = EntryState::default();
-                self.app_state = AppState::PhaseSelect(DS::None);
+                self.reset_entry_state(0);
+                self.set_mode(AppMode::PhaseSelect(DS::None))
             }
             _ => {}
         }
@@ -397,35 +420,57 @@ impl App {
         let len = self.get_active_counter().unwrap().get_phase_len();
         match key {
             KeyCode::Char('d') if self.get_unsafe_counter().get_phase_len() == 1 => {
-                self.app_state = AppState::Selection(DS::None)
+                self.set_mode(AppMode::Selection(DS::None))
             }
             KeyCode::Char('d') => {
-                self.app_state = AppState::PhaseSelect(DS::Delete);
+                self.set_mode(AppMode::Selection(DS::Delete))
             }
             KeyCode::Char('n') => self.get_unsafe_c_mut().new_phase(),
             KeyCode::Char('r') => 
-                self.app_state = AppState::PhaseSelect(DS::Editing(ES::Rename(false))),
+                self.set_mode(AppMode::PhaseSelect(DS::Editing(ES::Rename(false)))),
             KeyCode::Up => {
-                let mut selected = self.phase_list_state.selected().unwrap();
+                let mut selected = self.get_list_state(1).selected().unwrap();
                 selected += len - 1;
                 selected %= len;
-                self.phase_list_state.select(Some(selected as usize));
+                self.get_mut_list_state(1).select(Some(selected as usize));
             }
             KeyCode::Down => {
-                let mut selected = self.phase_list_state.selected().unwrap();
+                let mut selected = self.get_list_state(1).selected().unwrap();
                 selected += 1;
                 selected %= len;
-                self.phase_list_state.select(Some(selected as usize));
+                self.get_mut_list_state(1).select(Some(selected as usize));
             }
             KeyCode::Enter => {
-                self.phase_list_state.select(Some(0));
-                self.app_state = AppState::Counting(1);
+                self.get_mut_list_state(1).select(Some(0));
+                self.set_mode(AppMode::Counting(1));
             }
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.phase_list_state.select(None);
-                self.app_state = AppState::Selection(DS::None)
+                self.get_mut_list_state(1).select(None);
+                self.set_mode(AppMode::Selection(DS::None))
             }
             _ => {}
         }
+    }
+}
+
+pub struct AppState<const T:usize, const U:usize> {
+    mode: AppMode,
+    list_states: Vec<ListState>,
+    pub entry_state: Vec<EntryState>,
+}
+
+impl<const T:usize, const U:usize> AppState<T, U> {
+    fn new() -> Self {
+        Self { 
+            mode:             AppMode::default(),
+            list_states:      vec![ListState::default(); T],
+            entry_state:      vec![EntryState::default(); U],
+        }
+    }
+}
+
+impl<const T:usize, const U:usize> Default for AppState<T, U> {
+    fn default() -> Self {
+        Self::new()
     }
 }

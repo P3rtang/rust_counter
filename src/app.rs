@@ -17,6 +17,19 @@ use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
 
+
+#[derive(Debug)]
+pub enum AppError {
+    GetCounterError,
+    IoError,
+}
+
+impl From<io::Error> for AppError {
+    fn from(_: io::Error) -> Self {
+        Self::IoError
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub enum AppMode {
     Selection(DialogState),
@@ -77,13 +90,13 @@ impl App {
         self.is_super_user = is_super;
         self
     }
-    pub fn start(mut self) -> io::Result<Self> {
+    pub fn start(mut self) -> Result<App, AppError> {
         // setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend).unwrap();
+        let mut terminal = Terminal::new(backend)?;
 
             self.list_select(0, Some(0));
 
@@ -94,20 +107,20 @@ impl App {
             // timing the execution time of the loop and add it to the counter time
             now_time = Instant::now();
             if let AppMode::Counting(_) = self.get_mode() {
-                self.get_unsafe_c_mut()
+                self.get_active_c_mut().unwrap()
                     .increase_time(now_time - previous_time);
             }
             previous_time = Instant::now();
 
             // draw all ui elements
             terminal.draw(|f| {
-                ui::draw(f, &mut self);
+                ui::draw(f, &mut self).unwrap();
             })?;
 
             // if a widget alters the cursor position it will report to App
             // we set the terminal cursor position itself here
             if let Some(pos) = self.cursor_pos {
-                terminal.set_cursor(pos.0, pos.1).unwrap();
+                terminal.set_cursor(pos.0, pos.1)?;
             }
 
             // handle input events
@@ -117,7 +130,7 @@ impl App {
             // is one
             // if the TICK_SLOWDOWN time has been reached put the program in a slower poll rate
             if Instant::now() - self.last_interaction > Duration::from_secs(TIME_OUT) {
-                self.handle_event();
+                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{:?}", e))}
                 self.last_interaction = Instant::now();
                 // set previous time to `Now` so the pause time doesn't get added to the counter
                 previous_time = Instant::now();
@@ -129,7 +142,7 @@ impl App {
             if crossterm::event::poll(self.tick_rate.saturating_sub(Instant::now() - now_time))
                 .unwrap()
             {
-                self.handle_event();
+                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{:?}", e))}
                 self.last_interaction = Instant::now();
                 self.time_show_millis = true;
                 self.tick_rate = Duration::from_millis(1000 / FRAME_RATE)
@@ -138,20 +151,22 @@ impl App {
         Ok(self)
     }
 
-    pub fn get_active_counter(&self) -> Option<Ref<Counter>> {
-        self.c_store.get(self.get_list_state(0).selected().unwrap_or(0))
+    pub fn get_act_counter(&self) -> Result<Ref<Counter>, AppError> {
+        let selection = self.get_list_state(0).selected().unwrap_or(0);
+        if let Some(counter) = self.c_store.get(selection) {
+            return Ok(counter)
+        } else {
+            return Err(AppError::GetCounterError)
+        }
     }
 
-    pub fn get_unsafe_counter(&self) -> Ref<Counter> {
-        self.get_active_counter().unwrap()
-    }
-
-    pub fn get_active_c_mut(&self) -> Option<RefMut<Counter>> {
-        self.c_store.get_mut(self.get_list_state(0).selected().unwrap_or(0))
-    }
-
-    pub fn get_unsafe_c_mut(&self) -> RefMut<Counter> {
-        self.get_active_c_mut().unwrap()
+    pub fn get_active_c_mut(&self) -> Result<RefMut<Counter>, AppError> {
+        let selection = self.get_list_state(0).selected().unwrap_or(0);
+        if let Some(counter) = self.c_store.get_mut(selection) {
+            return Ok(counter)
+        } else {
+            return Err(AppError::GetCounterError)
+        }
     }
 
     pub fn end(self) -> io::Result<CounterStore> {
@@ -201,7 +216,7 @@ impl App {
         self.state.entry_states[index] = EntryState::default();
     }
 
-    fn handle_event(&mut self) {
+    fn handle_event(&mut self) -> Result<(), AppError> {
         if let Event::Key(key) = event::read().unwrap() {
             match self.get_mode() {
                 AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
@@ -214,11 +229,11 @@ impl App {
                 },
                 AppMode::Counting(n) => match key.code {
                     KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
-                        self.get_unsafe_c_mut().increase_by(1);
+                        self.get_active_c_mut()?.increase_by(1);
                         self.c_store.to_json(SAVE_FILE)
                     }
                     KeyCode::Char('-') => {
-                        self.get_unsafe_c_mut().increase_by(-1);
+                        self.get_active_c_mut()?.increase_by(-1);
                         self.c_store.to_json(SAVE_FILE)
                     }
                     KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
@@ -249,11 +264,11 @@ impl App {
                     _ => {}
                 },
                 AppMode::Selection(DS::Editing(ES::Rename(mode))) => 
-                    self.rename_key_event(key.code, *mode),
+                    self.rename_key_event(key.code, *mode)?,
                 AppMode::Selection(DS::Editing(ES::ChCount(mode))) => 
-                    self.change_count_key_event(key.code, *mode),
+                    self.change_count_key_event(key.code, *mode)?,
                 AppMode::Selection(DS::Editing(ES::ChTime(mode))) => {
-                    self.change_time_key_event(key.code, *mode)
+                    self.change_time_key_event(key.code, *mode)?;
                 }
                 AppMode::Selection(DS::Delete) => match key.code {
                     KeyCode::Enter => {
@@ -261,7 +276,6 @@ impl App {
                         if let Some(selected) = self.get_list_state(0).selected() {
                             if self.c_store.len() == 1 {
                                 self.c_store.remove(0);
-                                return
                             }
 
                             self.c_store.remove(selected);
@@ -274,18 +288,19 @@ impl App {
                     _ => {}
                 },
                 AppMode::PhaseSelect(DS::Editing(_)) => {
-                    self.rename_phase_key_event(key.code)
+                    self.rename_phase_key_event(key.code)?
                 }
                 AppMode::PhaseSelect(DS::Delete) => match key.code {
                     KeyCode::Enter => {
-                        todo!()
+                        todo!();
                     }
                     KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
                     _ => {}
                 },
-                AppMode::PhaseSelect(_) => self.phase_select_key_event(key.code),
+                AppMode::PhaseSelect(_) => self.phase_select_key_event(key.code)?,
             }
         }
+        Ok(())
     }
 
     fn selection_key_event(&mut self, key: KeyCode) {
@@ -304,7 +319,7 @@ impl App {
                 self.set_mode(AppMode::PhaseSelect(DS::None)) 
             }
             KeyCode::Enter => {
-                if self.get_active_counter().unwrap().get_phase_len() > 1 {
+                if self.get_act_counter().unwrap().get_phase_len() > 1 {
                     let selected = self.get_list_state(1).selected().unwrap_or(0);
                     self.list_select(1, Some(selected));
                     self.set_mode(AppMode::PhaseSelect(DS::None))
@@ -329,7 +344,7 @@ impl App {
         }
     }
 
-    fn rename_key_event(&mut self, key: KeyCode, in_editing_mode: bool) {
+    fn rename_key_event(&mut self, key: KeyCode, in_editing_mode: bool) -> Result<(), AppError> {
         match key {
             KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
@@ -337,7 +352,7 @@ impl App {
             }
             KeyCode::Enter => {
                 let name = self.get_entry_state(0).get_active_field().clone();
-                self.get_unsafe_c_mut().set_name(&name);
+                self.get_active_c_mut()?.set_name(&name);
                 self.reset_entry_state(0);
                 if in_editing_mode { 
                     self.set_mode(AppMode::Selection(DS::Editing(ES::ChCount(true))))
@@ -351,9 +366,12 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
     }
 
-    fn change_count_key_event(&mut self, key: KeyCode, in_editing_mode: bool) {
+    fn change_count_key_event(&mut self, key: KeyCode, in_editing_mode: bool)
+        -> Result<(), AppError> 
+    {
         match key {
             KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
@@ -363,8 +381,8 @@ impl App {
                 let count = self.get_entry_state(0)
                     .get_active_field()
                     .parse()
-                    .unwrap_or_else(|_| self.get_active_counter().unwrap().get_count());
-                self.get_unsafe_c_mut().set_count(count);
+                    .unwrap_or_else(|_| self.get_act_counter().unwrap().get_count());
+                self.get_active_c_mut()?.set_count(count);
                 self.reset_entry_state(0);
                 if in_editing_mode { 
                     self.set_mode(AppMode::Selection(DS::Editing(ES::ChTime(true))))
@@ -378,9 +396,12 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
     }
 
-    fn change_time_key_event(&mut self, key: KeyCode, _in_editing_mode: bool) {
+    fn change_time_key_event(&mut self, key: KeyCode, _in_editing_mode: bool)
+        -> Result<(), AppError> 
+    {
         match key {
             KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => {
@@ -390,8 +411,8 @@ impl App {
                 let time = self.get_entry_state(0)
                     .get_active_field()
                     .parse()
-                    .unwrap_or(self.get_unsafe_counter().get_time().as_secs() / 60);
-                self.get_unsafe_c_mut().set_time(time);
+                    .unwrap_or(self.get_act_counter()?.get_time().as_secs() / 60);
+                self.get_active_c_mut()?.set_time(time);
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::Selection(DS::None))
             }
@@ -401,15 +422,16 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
     }
-    fn rename_phase_key_event(&mut self, key: KeyCode) {
+    fn rename_phase_key_event(&mut self, key: KeyCode) -> Result<(), AppError> {
         match key {
             KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
             KeyCode::Backspace => self.get_entry_state(0).pop(),
             KeyCode::Enter => {
                 let phase = self.get_list_state(1).selected().unwrap_or(0);
                 let name  = self.get_entry_state(0).get_active_field().clone();
-                self.get_unsafe_c_mut().set_phase_name(phase, name);
+                self.get_active_c_mut()?.set_phase_name(phase, name);
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::PhaseSelect(DS::None))
             }
@@ -419,17 +441,18 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
     }
-    fn phase_select_key_event(&mut self, key: KeyCode) {
-        let len = self.get_active_counter().unwrap().get_phase_len();
+    fn phase_select_key_event(&mut self, key: KeyCode) -> Result<(), AppError> {
+        let len = self.get_act_counter().unwrap().get_phase_len();
         match key {
-            KeyCode::Char('d') if self.get_unsafe_counter().get_phase_len() == 1 => {
+            KeyCode::Char('d') if self.get_act_counter()?.get_phase_len() == 1 => {
                 self.set_mode(AppMode::Selection(DS::None))
             }
             KeyCode::Char('d') => {
                 self.set_mode(AppMode::Selection(DS::Delete))
             }
-            KeyCode::Char('n') => self.get_unsafe_c_mut().new_phase(),
+            KeyCode::Char('n') => self.get_active_c_mut()?.new_phase(),
             KeyCode::Char('r') => 
                 self.set_mode(AppMode::PhaseSelect(DS::Editing(ES::Rename(false)))),
             KeyCode::Up => {
@@ -454,6 +477,7 @@ impl App {
             }
             _ => {}
         }
+        Ok(())
     }
 }
 

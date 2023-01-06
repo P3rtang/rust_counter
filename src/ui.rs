@@ -7,7 +7,7 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::{entry::EntryState, app::{App, AppMode, DialogState as DS, EditingState as ES}};
+use crate::{entry::EntryState, app::{App, AppMode, DialogState as DS, EditingState as ES, AppError}};
 use crate::entry::Entry;
 use crate::dialog::Dialog;
 
@@ -28,7 +28,7 @@ pub enum UiWidth {
     Big,
 }
 
-pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
+pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<(), AppError> {
     app.ui_size = match f.size().width {
         0..=27 => UiWidth::VerySmall,
         28..=60 => UiWidth::Small,
@@ -63,8 +63,8 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
 
     draw_counter_list(f, app, chunks[0]);
     draw_phase_list(f, app, &chunks);
-    draw_text_boxes(f, app, &right_chunks);
-    draw_progress_gauge(f, app, &right_chunks);
+    draw_text_boxes(f, app, &right_chunks)?;
+    draw_progress_gauge(f, app, &right_chunks)?;
 
     // if any the app is in an entry state draw them last so they go on top
     match app.get_mode() {
@@ -72,7 +72,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
             draw_entry(f, &mut app.get_entry_state(0), "Name new Counter", (50, 10))
         }
         AppMode::PhaseSelect(DS::Editing(_)) => {
-            let phase_title = format!("give phase {}\n a name", app.get_unsafe_counter().get_phase_name(app.get_list_state(1).selected().unwrap_or(0)));
+            let phase_title = format!("give phase {}\n a name", app.get_act_counter()?.get_phase_name(app.get_list_state(1).selected().unwrap_or(0)));
             draw_entry(f, &mut app.get_entry_state(0), &phase_title, (50, 10));
         }
         AppMode::Selection(DS::Editing(ES::Rename(_))) => {
@@ -85,17 +85,18 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
             draw_entry(f, &mut app.get_entry_state(0), "Change Time", (50, 10));
         }
         AppMode::Selection(DS::Delete) => {
-            let name = app.get_active_counter().unwrap().get_name();
+            let name = app.get_act_counter().unwrap().get_name();
             draw_delete_dialog(f, &name)
         }
         AppMode::PhaseSelect(DS::Delete) =>  {
-            if app.get_unsafe_counter().get_phase_count() > 1 {
-                let name = app.get_active_counter().unwrap().get_phase_name(app.get_list_state(0).selected().unwrap_or(1));
+            if app.get_act_counter()?.get_phase_count() > 1 {
+                let name = app.get_act_counter()?.get_phase_name(app.get_list_state(0).selected().unwrap_or(1));
                 draw_delete_dialog(f, &name)
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 // format any time to a readable digital clock with hours as the highest divider
@@ -165,6 +166,7 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
     // if the app uisize is small hide the main counter list when phases are displayed
     // if the list is displayed it should be blue when it is the active widget
     use AppMode::*;
+
     let (color, title) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) 
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
@@ -182,43 +184,46 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppMode::*;
-    if let Some(counter) = app.get_active_counter() {
+    
+    let (color, title) = match app.get_mode() {
+        Selection(_) | Counting(0) 
+            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+        Selection(_) | Counting(_) => (Color::White, ""),
+        _ => (BLUE, "Phases")
+    };
 
-        let (color, title) = match app.get_mode() {
-            Selection(_) | Counting(0) 
-                if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
-            Selection(_) | Counting(_) => (Color::White, ""),
-            _ => (BLUE, "Phases")
-        };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(color));
 
-        let mut rect_ind = 1;
-        if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
+    let mut rect_ind = 1;
+    if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .style(Style::default().fg(color));
-        let list_widget = create_list(app.get_unsafe_counter().get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block);
-        f.render_stateful_widget(list_widget, area[rect_ind], app.get_list_state(1))
-    }
+    let list_widget = if let Ok(counter) = app.get_act_counter() {
+        create_list(counter.get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block)
+    } else {
+        create_list(vec![], block)
+    };
+    f.render_stateful_widget(list_widget, area[rect_ind], app.get_list_state(1))
 }
 
-fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
+fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) -> Result<(), AppError> {
     use AppMode::*;
     let (color, title) = match app.get_mode() {
-        Counting(_) => (BLUE, format!("{} - {}", app.get_unsafe_counter().get_name(), app.get_unsafe_counter().get_phase_name(0))),
-        _ if app.ui_size == UiWidth::VerySmall => return,
+        Counting(_) => (BLUE, format!("{} - {}", app.get_act_counter()?.get_name(), app.get_act_counter()?.get_phase_name(0))),
+        _ if app.ui_size == UiWidth::VerySmall => return Ok(()),
         _ => (Color::White, "".to_string())
     };
 
     let (active_count, active_time) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) => (
-            app.get_active_counter().map_or(0,                   |c| c.get_nphase_count (app.get_list_state(1).selected().unwrap_or(0))),
-            app.get_active_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.get_list_state(1).selected().unwrap_or(0))),
+            app.get_act_counter().map_or(0,                   |c| c.get_nphase_count (app.get_list_state(1).selected().unwrap_or(0))),
+            app.get_act_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.get_list_state(1).selected().unwrap_or(0))),
         ),
         _ => (
-            app.get_active_counter().map_or(0,                   |c| c.get_count()),
-            app.get_active_counter().map_or(Duration::default(), |c| c.get_time()),
+            app.get_act_counter().map_or(0,                   |c| c.get_count()),
+            app.get_act_counter().map_or(Duration::default(), |c| c.get_time()),
         )
     };
 
@@ -238,22 +243,25 @@ fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
         .block(time_block)
         .alignment(Alignment::Center);
     f.render_widget(paragraph, area[0]);
-    f.render_widget(paragraph_time, area[1]);
+    if f.size().height >= 9 {
+        f.render_widget(paragraph_time, area[1]);
+    }
+    Ok(())
 }
 
-fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
+fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) -> Result<(), AppError> {
     use AppMode::*;
 
-    let progress = app.get_active_counter().map_or(0.0, |c| c.get_progress());
+    let progress = app.get_act_counter().map_or(0.0, |c| c.get_progress());
     match app.get_mode() {
         Counting(_) if app.ui_size == UiWidth::VerySmall => {}
-        _ if app.ui_size == UiWidth::VerySmall => return,
+        _ if app.ui_size == UiWidth::VerySmall => return Ok(()),
         _ => {}
     }
     
     let mut color = GREEN;
     if progress < 0.5 {}
-    else if app.get_unsafe_counter().get_count() < app.get_unsafe_counter().get_progress_odds() as i32 { color = YELLOW }
+    else if app.get_act_counter()?.get_count() < app.get_act_counter()?.get_progress_odds() as i32 { color = YELLOW }
     else if progress < 0.75 { color = ORANGE }
     else { color = BRIGHT_RED }
 
@@ -268,4 +276,5 @@ fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, a
         .ratio(progress)
         .label(format!("{:.3}", progress * 100.0));
     f.render_widget(progress_bar, chunk[1]);
+    Ok(())
 }

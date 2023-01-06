@@ -1,3 +1,5 @@
+use std::cell::{RefCell, Ref};
+
 use crossterm::event::KeyCode;
 use tui::layout::Rect;
 use tui::text::Text;
@@ -11,7 +13,7 @@ use tui::{
 pub struct EntryState {
     fields: Vec<String>,
     active_field: usize,
-    cursor_pos: Option<(u16, u16)>,
+    cursor_pos: RefCell<Option<(u16, u16)>>,
 }
 
 impl EntryState {
@@ -19,7 +21,7 @@ impl EntryState {
         EntryState {
             fields: vec![String::new(); 1],
             active_field: 0,
-            cursor_pos: Some((0, 0)),
+            cursor_pos: RefCell::new(Some((0, 0))),
         }
     }
 
@@ -44,17 +46,17 @@ impl EntryState {
     }
 
     pub fn show_cursor(mut self) -> Self {
-        self.cursor_pos = Some((0, 0));
+        self.cursor_pos = RefCell::new(Some((0, 0)));
         self
     }
 
     pub fn hide_cursor(mut self) -> Self {
-        self.cursor_pos = Some((0, 0));
+        self.cursor_pos = RefCell::new(Some((0, 0)));
         self
     }
 
-    pub fn get_cursor(&self) -> Option<(u16, u16)> {
-        self.cursor_pos
+    pub fn get_cursor(&self) -> Ref<Option<(u16, u16)>> {
+        self.cursor_pos.borrow()
     }
 
     pub fn set_field(&mut self, field: impl Into<String>) {
@@ -119,7 +121,7 @@ impl<'a> Entry<'a> {
 impl<'a> StatefulWidget for Entry<'a> {
     type State = EntryState;
 
-    fn render(mut self, area: Rect, buf: &mut tui::buffer::Buffer, state: &mut Self::State) {
+    fn render(mut self, area: Rect, buf: &mut tui::buffer::Buffer, state: &Self::State) {
         // get the area of the widget itself (this is to exclude the border from the area)
         buf.set_style(area, self.style);
         let widget_area = match self.block {
@@ -198,10 +200,10 @@ impl<'a> StatefulWidget for Entry<'a> {
 
         // setting cursor just after last character
         if state.get_cursor().is_some() {
-            state.cursor_pos = Some((
+            state.cursor_pos.swap(&RefCell::new(Some((
                 entry_area.x + state.get_active_field().len() as u16,
                 entry_area.y,
-            ));
+            ))));
         }
 
         // display the usable keys on the bottom if space allows it and keys are initialized
@@ -228,7 +230,7 @@ impl<'a> StatefulWidget for Entry<'a> {
 
 impl<'a> Widget for Entry<'a> {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let mut state = EntryState::default();
-        StatefulWidget::render(self, area, buf, &mut state)
+        let state = EntryState::default();
+        StatefulWidget::render(self, area, buf, &state)
     }
 }

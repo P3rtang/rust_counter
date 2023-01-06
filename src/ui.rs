@@ -131,7 +131,9 @@ fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntrySt
         .keys(KeyCode::Esc, KeyCode::Enter)
         .block(block);
     f.render_stateful_widget(entry, window, entry_state);
-    if let Some(pos) = entry_state.get_cursor() {
+
+    let pos_val = entry_state.get_cursor().map(|cur| cur);
+    if let Some(pos) = pos_val {
         f.set_cursor(pos.0, pos.1)
     }
 }
@@ -175,28 +177,30 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
         .title(title)
         .style(Style::default().fg(color));
     let list_widget = create_list(app.c_store.get_counters().iter().map(|c| ListItem::new(c.borrow().get_name())).collect(), block);
-    f.render_stateful_widget(list_widget, area, &mut app.get_mut_list_state(0))
+    f.render_stateful_widget(list_widget, area, app.get_list_state(0))
 }
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     use AppMode::*;
-    if app.get_active_counter().is_none() { return }
-    let (color, title) = match app.get_mode() {
-        Selection(_) | Counting(0) 
-            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
-        Selection(_) | Counting(_) => (Color::White, ""),
-        _ => (BLUE, "Phases")
-    };
+    if let Some(counter) = app.get_active_counter() {
 
-    let mut rect_ind = 1;
-    if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
+        let (color, title) = match app.get_mode() {
+            Selection(_) | Counting(0) 
+                if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+            Selection(_) | Counting(_) => (Color::White, ""),
+            _ => (BLUE, "Phases")
+        };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .style(Style::default().fg(color));
-    let list_widget = create_list(app.get_unsafe_counter().get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block);
-    f.render_stateful_widget(list_widget, area[rect_ind], &mut app.get_mut_list_state(1))
+        let mut rect_ind = 1;
+        if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .style(Style::default().fg(color));
+        let list_widget = create_list(app.get_unsafe_counter().get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block);
+        f.render_stateful_widget(list_widget, area[rect_ind], app.get_list_state(1))
+    }
 }
 
 fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {

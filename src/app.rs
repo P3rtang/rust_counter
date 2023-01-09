@@ -1,4 +1,4 @@
-use crate::entry::EntryState;
+use crate::widgets::entry::EntryState;
 use crate::ui::{self, UiWidth};
 use crate::SAVE_FILE;
 use crate::{
@@ -21,6 +21,7 @@ use EditingState as ES;
 #[derive(Debug)]
 pub enum AppError {
     GetCounterError,
+    GetPhaseError,
     IoError,
 }
 
@@ -107,7 +108,7 @@ impl App {
             // timing the execution time of the loop and add it to the counter time
             now_time = Instant::now();
             if let AppMode::Counting(_) = self.get_mode() {
-                self.get_active_c_mut().unwrap()
+                self.get_mut_act_counter().unwrap()
                     .increase_time(now_time - previous_time);
             }
             previous_time = Instant::now();
@@ -160,13 +161,37 @@ impl App {
         }
     }
 
-    pub fn get_active_c_mut(&self) -> Result<RefMut<Counter>, AppError> {
+    pub fn get_mut_act_counter(&self) -> Result<RefMut<Counter>, AppError> {
         let selection = self.get_list_state(0).selected().unwrap_or(0);
         if let Some(counter) = self.c_store.get_mut(selection) {
             return Ok(counter)
         } else {
             return Err(AppError::GetCounterError)
         }
+    }
+
+    pub fn get_act_phase_name(&self) -> Result<String, AppError> {
+        let selected = self.get_list_state(1).selected().unwrap_or(0);
+        self.get_act_counter()?
+            .get_phase(selected)
+            .map(|p| p.get_name())
+            .ok_or(AppError::GetPhaseError)
+    }
+
+    pub fn get_act_phase_count(&self) -> Result<i32, AppError> {
+        let selected = self.get_list_state(1).selected().unwrap_or(0);
+        self.get_act_counter()?
+            .get_phase(selected)
+            .map(|p| p.get_count())
+            .ok_or(AppError::GetPhaseError)
+    }
+    
+    pub fn get_act_phase_time(&self) -> Result<Duration, AppError> {
+        let selected = self.get_list_state(1).selected().unwrap_or(0);
+        self.get_act_counter()?
+            .get_phase(selected)
+            .map(|p| p.get_time())
+            .ok_or(AppError::GetPhaseError)
     }
 
     pub fn end(self) -> io::Result<CounterStore> {
@@ -229,11 +254,11 @@ impl App {
                 },
                 AppMode::Counting(n) => match key.code {
                     KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
-                        self.get_active_c_mut()?.increase_by(1);
+                        self.get_mut_act_counter()?.increase_by(1);
                         self.c_store.to_json(SAVE_FILE)
                     }
                     KeyCode::Char('-') => {
-                        self.get_active_c_mut()?.increase_by(-1);
+                        self.get_mut_act_counter()?.increase_by(-1);
                         self.c_store.to_json(SAVE_FILE)
                     }
                     KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
@@ -352,7 +377,7 @@ impl App {
             }
             KeyCode::Enter => {
                 let name = self.get_entry_state(0).get_active_field().clone();
-                self.get_active_c_mut()?.set_name(&name);
+                self.get_mut_act_counter()?.set_name(&name);
                 self.reset_entry_state(0);
                 if in_editing_mode { 
                     self.set_mode(AppMode::Selection(DS::Editing(ES::ChCount(true))))
@@ -382,7 +407,7 @@ impl App {
                     .get_active_field()
                     .parse()
                     .unwrap_or_else(|_| self.get_act_counter().unwrap().get_count());
-                self.get_active_c_mut()?.set_count(count);
+                self.get_mut_act_counter()?.set_count(count);
                 self.reset_entry_state(0);
                 if in_editing_mode { 
                     self.set_mode(AppMode::Selection(DS::Editing(ES::ChTime(true))))
@@ -412,7 +437,7 @@ impl App {
                     .get_active_field()
                     .parse()
                     .unwrap_or(self.get_act_counter()?.get_time().as_secs() / 60);
-                self.get_active_c_mut()?.set_time(time);
+                self.get_mut_act_counter()?.set_time(Duration::from_secs(time * 60));
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::Selection(DS::None))
             }
@@ -431,7 +456,7 @@ impl App {
             KeyCode::Enter => {
                 let phase = self.get_list_state(1).selected().unwrap_or(0);
                 let name  = self.get_entry_state(0).get_active_field().clone();
-                self.get_active_c_mut()?.set_phase_name(phase, name);
+                self.get_mut_act_counter()?.set_phase_name(phase, name);
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::PhaseSelect(DS::None))
             }
@@ -452,7 +477,7 @@ impl App {
             KeyCode::Char('d') => {
                 self.set_mode(AppMode::Selection(DS::Delete))
             }
-            KeyCode::Char('n') => self.get_active_c_mut()?.new_phase(),
+            KeyCode::Char('n') => self.get_mut_act_counter()?.new_phase(),
             KeyCode::Char('r') => 
                 self.set_mode(AppMode::PhaseSelect(DS::Editing(ES::Rename(false)))),
             KeyCode::Up => {

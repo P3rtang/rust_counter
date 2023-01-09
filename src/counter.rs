@@ -9,9 +9,6 @@ use std::fs::File;
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Default)]
 pub struct Counter {
     name:     String,
-    count:    i32,
-    active:   bool,
-    time:     Duration,
     progress: Progress,
     phases:   Vec<Phase>,
 }
@@ -20,22 +17,18 @@ impl Counter {
     pub fn new(name: impl Into<String>) -> Self {
         Counter { 
             name: name.into(),
-            count: 0,
-            active: false,
-            time: Duration::default(),
             progress: Progress::default(), 
             phases: vec![ Phase::new("Phase 1", 0, Duration::default()) ],
         }
     }
 
     pub fn set_count(&mut self, count: i32)  {
-        let diff = count - self.count;
-        self.count += diff;
+        let diff = count - self.get_count();
         self.phases[0].count += diff;
-        self.progress.calc_progress(self.count as u64);
+        self.progress.calc_progress(self.get_count() as u64);
     }
     pub fn get_count(&self) -> i32 {
-        self.count
+        return self.phases.iter().map(|p| p.get_count()).sum();
     }
 
     pub fn get_phase_count(&self) -> i32 {
@@ -53,9 +46,7 @@ impl Counter {
     }
 
     pub fn set_name(&mut self, name: impl Into<String> + Copy) {
-        if name.into() == "" {
-            return
-        }
+        if name.into() == "" { return }
         self.name = name.into()
     }
     pub fn get_name(&self) -> String {
@@ -64,23 +55,22 @@ impl Counter {
 
     /// Sets the time of this `Counter`.
     /// time in minutes
-    pub fn set_time(&mut self, time: u64) {
-        self.time = Duration::from_secs(time * 60)
+    pub fn set_time(&mut self, time: Duration) {
+        let diff = time - self.get_time();
+        self.phases[0].time += diff;
+        self.progress.calc_progress(self.get_count() as u64);
     }
     pub fn get_time(&self) -> Duration {
-        self.time
+        return self.phases.iter().map(|p| p.get_time()).sum()
     }
 
     pub fn increase_by (&mut self, amount: i32) {
-        self.count += amount;
         self.phases[0].count += amount;
-        self.progress.calc_progress(self.count as u64);
+        self.progress.calc_progress(self.get_count() as u64);
     }
 
     pub fn increase_time(&mut self, time: Duration) {
-        self.time += time;
         self.phases[0].time += time;
-        self.progress.calc_progress(self.count as u64);
     }
 
     pub fn get_progress(&self) -> f64 {
@@ -96,6 +86,9 @@ impl Counter {
     
     pub fn new_phase(&mut self) {
         self.phases.insert(0, Phase::new(&format!("Phase {}", self.phases.len() + 1), 0, Duration::default()))
+    }
+    pub fn get_phase(&self, idx: usize) -> Option<&Phase> {
+        self.phases.get(idx)
     }
     pub fn get_phase_len(&self) -> usize {
         self.phases.len()
@@ -119,7 +112,7 @@ impl Counter {
 
 impl fmt::Display for Counter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.name, self.count)
+        write!(f, "{}: {}", self.name, self.get_count())
     } 
 }
 
@@ -273,5 +266,11 @@ impl Phase {
 
     pub fn get_name(&self) -> String {
         self.name.clone()
+    }
+    pub fn get_count(&self) -> i32 {
+        self.count
+    }
+    pub fn get_time(&self) -> Duration {
+        self.time
     }
 }

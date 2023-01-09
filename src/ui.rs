@@ -7,9 +7,9 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::{entry::EntryState, app::{App, AppMode, DialogState as DS, EditingState as ES, AppError}};
-use crate::entry::Entry;
-use crate::dialog::Dialog;
+use crate::app::{App, AppMode, DialogState as DS, EditingState as ES, AppError};
+use crate::widgets::entry::{Entry, EntryState};
+use crate::widgets::dialog::Dialog;
 
 const BLUE:       Color = Color::Rgb(139, 233, 253);
 const GRAY:       Color = Color::Rgb(100, 114, 125);
@@ -20,28 +20,32 @@ const ORANGE:     Color = Color::Rgb(255, 184, 108);
 const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
 const YELLOW:     Color = Color::Rgb(241, 250, 140);
 
-
+// TODO: remove this enum
 #[derive(PartialEq, Eq)]
 pub enum UiWidth {
-    VerySmall,
+    Compact,
     Small,
+    Medium,
     Big,
 }
 
 pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<(), AppError> {
     app.ui_size = match f.size().width {
-        0..=27 => UiWidth::VerySmall,
-        28..=60 => UiWidth::Small,
+        0..=27 => UiWidth::Small,
+        28..=60 => UiWidth::Medium,
         _ => UiWidth::Big,
     };
     let constraints = match app.ui_size {
-        UiWidth::Small => { 
-            vec![Constraint::Min(15), Constraint::Length(0), Constraint::Percentage(80)]
+        UiWidth::Medium => { 
+            vec![Constraint::Min(15), Constraint::Percentage(80)]
         }
         UiWidth::Big => {
             vec![Constraint::Percentage(20), Constraint::Percentage(20), Constraint::Percentage(60)]
         }
-        UiWidth::VerySmall => {
+        UiWidth::Compact => {
+            vec![Constraint::Percentage(100)]
+        }
+        UiWidth::Small => {
             vec![Constraint::Percentage(100)]
         }
     };
@@ -72,7 +76,10 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
             draw_entry(f, &mut app.get_entry_state(0), "Name new Counter", (50, 10))
         }
         AppMode::PhaseSelect(DS::Editing(_)) => {
-            let phase_title = format!("give phase {}\n a name", app.get_act_counter()?.get_phase_name(app.get_list_state(1).selected().unwrap_or(0)));
+            let phase_title = format!(
+                "give phase {}\n a name",
+                app.get_act_phase_name()?
+            );
             draw_entry(f, &mut app.get_entry_state(0), &phase_title, (50, 10));
         }
         AppMode::Selection(DS::Editing(ES::Rename(_))) => {
@@ -85,12 +92,12 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
             draw_entry(f, &mut app.get_entry_state(0), "Change Time", (50, 10));
         }
         AppMode::Selection(DS::Delete) => {
-            let name = app.get_act_counter().unwrap().get_name();
+            let name = app.get_act_counter()?.get_name();
             draw_delete_dialog(f, &name)
         }
         AppMode::PhaseSelect(DS::Delete) =>  {
             if app.get_act_counter()?.get_phase_count() > 1 {
-                let name = app.get_act_counter()?.get_phase_name(app.get_list_state(0).selected().unwrap_or(1));
+                let name = app.get_act_phase_name()?;
                 draw_delete_dialog(f, &name)
             }
         }
@@ -117,10 +124,20 @@ fn format_paragraph(text: impl Into<String>) -> String {
     text
 }
 
-fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntryState, title: impl Into<String>, size: (u16, u16)) {
+fn draw_entry(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    entry_state: &mut EntryState,
+    title: impl Into<String>,
+    size: (u16, u16)
+) {
     let mut window = f.size();
     if window.width >= size.0 && window.height >= size.1 {
-        window = Rect::new((window.right() - size.0) / 2, (window.bottom() - size.1) / 2, size.0, size.1);
+        window = Rect::new(
+            (window.right() - size.0) / 2,
+            (window.bottom() - size.1) / 2,
+            size.0,
+            size.1
+        );
     }
     let block = Block::default()
         .borders(Borders::ALL);
@@ -139,7 +156,9 @@ fn draw_entry(f: &mut Frame<CrosstermBackend<Stdout>>, entry_state: &mut EntrySt
     }
 }
 
-fn draw_delete_dialog(f: &mut Frame<CrosstermBackend<Stdout>>, name: impl Into<String> + std::fmt::Display) {
+fn draw_delete_dialog
+    (f: &mut Frame<CrosstermBackend<Stdout>>, name: impl Into<String> + std::fmt::Display)
+{
     let mut size = f.size();
     if size.width >= 50 && size.height >= 10 {
         size = Rect::new((size.right() - 50) / 2, (size.bottom() - 10) / 2, 50, 10);
@@ -169,7 +188,7 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 
     let (color, title) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) 
-            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
         PhaseSelect(_) | Counting(_) => (Color::White, ""),
         _ => (BLUE, "Counters"),
     };
@@ -178,7 +197,14 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
         .borders(Borders::ALL)
         .title(title)
         .style(Style::default().fg(color));
-    let list_widget = create_list(app.c_store.get_counters().iter().map(|c| ListItem::new(c.borrow().get_name())).collect(), block);
+    let list_widget = create_list(
+        app.c_store
+            .get_counters()
+            .iter()
+            .map(|c| ListItem::new(c.borrow().get_name()))
+            .collect(),
+        block
+    );
     f.render_stateful_widget(list_widget, area, app.get_list_state(0))
 }
 
@@ -187,7 +213,7 @@ fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
     
     let (color, title) = match app.get_mode() {
         Selection(_) | Counting(0) 
-            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::VerySmall => return,
+            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
         Selection(_) | Counting(_) => (Color::White, ""),
         _ => (BLUE, "Phases")
     };
@@ -198,28 +224,42 @@ fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
         .style(Style::default().fg(color));
 
     let mut rect_ind = 1;
-    if app.ui_size == UiWidth::VerySmall || app.ui_size == UiWidth::Small { rect_ind = 0 }
+    if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small { rect_ind = 0 }
 
     let list_widget = if let Ok(counter) = app.get_act_counter() {
-        create_list(counter.get_phases().iter().map(|p| ListItem::new(p.get_name())).collect(), block)
+        create_list(
+            counter
+                .get_phases()
+                .iter()
+                .map(|p| ListItem::new(p.get_name()))
+                .collect(),
+            block
+        )
     } else {
         create_list(vec![], block)
     };
     f.render_stateful_widget(list_widget, area[rect_ind], app.get_list_state(1))
 }
 
-fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) -> Result<(), AppError> {
+fn draw_text_boxes
+    (f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect])
+    -> Result<(), AppError> 
+{
     use AppMode::*;
     let (color, title) = match app.get_mode() {
-        Counting(_) => (BLUE, format!("{} - {}", app.get_act_counter()?.get_name(), app.get_act_counter()?.get_phase_name(0))),
-        _ if app.ui_size == UiWidth::VerySmall => return Ok(()),
+        Counting(_) => (BLUE, format!(
+            "{} - {}",
+            app.get_act_counter()?.get_name(),
+            app.get_act_phase_name()?
+        )),
+        _ if app.ui_size == UiWidth::Compact => return Ok(()),
         _ => (Color::White, "".to_string())
     };
 
     let (active_count, active_time) = match app.get_mode() {
         PhaseSelect(_) | Counting(1) => (
-            app.get_act_counter().map_or(0,                   |c| c.get_nphase_count (app.get_list_state(1).selected().unwrap_or(0))),
-            app.get_act_counter().map_or(Duration::default(), |c| c.get_nphase_time  (app.get_list_state(1).selected().unwrap_or(0))),
+            app.get_act_phase_count()?,
+            app.get_act_phase_time()?,
         ),
         _ => (
             app.get_act_counter().map_or(0,                   |c| c.get_count()),
@@ -239,29 +279,37 @@ fn draw_text_boxes(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
         .block(paragraph_block)
         .alignment(Alignment::Center);
 
-    let paragraph_time = Paragraph::new(format_paragraph(format_duration(active_time, app.time_show_millis)))
+    let paragraph_time = Paragraph::new(
+            format_paragraph(format_duration(active_time, app.time_show_millis))
+        )
         .block(time_block)
         .alignment(Alignment::Center);
-    f.render_widget(paragraph, area[0]);
-    if f.size().height >= 9 {
+    if f.size().height >= 10 {
+        f.render_widget(paragraph, area[0]);
         f.render_widget(paragraph_time, area[1]);
+    } else {
+        f.render_widget(paragraph, area[0].union(area[1]))
     }
     Ok(())
 }
 
-fn draw_progress_gauge(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) -> Result<(), AppError> {
+fn draw_progress_gauge
+    (f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect])
+    -> Result<(), AppError> 
+{
     use AppMode::*;
 
     let progress = app.get_act_counter().map_or(0.0, |c| c.get_progress());
     match app.get_mode() {
-        Counting(_) if app.ui_size == UiWidth::VerySmall => {}
-        _ if app.ui_size == UiWidth::VerySmall => return Ok(()),
+        Counting(_) if app.ui_size == UiWidth::Compact => {}
+        _ if app.ui_size == UiWidth::Compact => return Ok(()),
         _ => {}
     }
     
     let mut color = GREEN;
     if progress < 0.5 {}
-    else if app.get_act_counter()?.get_count() < app.get_act_counter()?.get_progress_odds() as i32 { color = YELLOW }
+    else if app.get_act_counter()?.get_count() 
+        < app.get_act_counter()?.get_progress_odds() as i32 { color = YELLOW }
     else if progress < 0.75 { color = ORANGE }
     else { color = BRIGHT_RED }
 

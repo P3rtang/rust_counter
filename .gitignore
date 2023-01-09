@@ -3,3 +3,5 @@ data.json
 Cargo.lock
 data.json
 .vim_session
+.dev-scripts/
+postgres/

@@ -252,7 +252,7 @@ fn draw_text_boxes
             app.get_act_counter()?.get_name(),
             app.get_act_phase_name()?
         )),
-        _ if app.ui_size == UiWidth::Compact => return Ok(()),
+        _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
         _ => (Color::White, "".to_string())
     };
 
@@ -301,8 +301,8 @@ fn draw_progress_gauge
 
     let progress = app.get_act_counter().map_or(0.0, |c| c.get_progress());
     match app.get_mode() {
-        Counting(_) if app.ui_size == UiWidth::Compact => {}
-        _ if app.ui_size == UiWidth::Compact => return Ok(()),
+        Counting(_) if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => {}
+        _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
         _ => {}
     }
     

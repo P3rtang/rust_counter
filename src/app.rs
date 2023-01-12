@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
-
+use crate::input::{InputEvent, Key};
 
 #[derive(Debug)]
 pub enum AppError {
@@ -242,108 +242,114 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-        if let Event::Key(key) = event::read().unwrap() {
-            match self.get_mode() {
-                AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
-                    self.selection_key_event(key.code)
-                }
-                AppMode::Selection(DS::None) => match key.code {
-                    KeyCode::Char('q') => self.running = false,
-                    KeyCode::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
-                    _ => {}
-                },
-                AppMode::Counting(n) => match key.code {
-                    KeyCode::Char(charr) if (charr == '=') | (charr == '+') => {
-                        self.get_mut_act_counter()?.increase_by(1);
-                        self.c_store.to_json(SAVE_FILE)
-                    }
-                    KeyCode::Char('-') => {
-                        self.get_mut_act_counter()?.increase_by(-1);
-                        self.c_store.to_json(SAVE_FILE)
-                    }
-                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
-                    KeyCode::Char('q') if n == &0 => {
-                        self.list_deselect(1);
-                        self.set_mode(AppMode::Selection(DS::None))
-                    }
-                    KeyCode::Char('q') if n == &1 => {
-                        self.set_mode(AppMode::PhaseSelect(DS::None)) 
-                    }
-                    _ => {}
-                },
-                AppMode::Selection(DS::AddNew) => match key.code {
-                    KeyCode::Esc => {
-                        self.set_mode(AppMode::Selection(DS::None));
-                        self.reset_entry_state(0);
-                    }
-                    KeyCode::Enter => {
-                        let name = self.get_entry_state(0).get_active_field().clone();
-                        self.c_store.push(Counter::new(name));
-                        self.reset_entry_state(0);
-                        self.set_mode(AppMode::Selection(DS::None));
-                    }
-                    KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
-                    KeyCode::Backspace => {
-                        self.get_entry_state(0).pop();
-                    }
-                    _ => {}
-                },
-                AppMode::Selection(DS::Editing(ES::Rename(mode))) => 
-                    self.rename_key_event(key.code, *mode)?,
-                AppMode::Selection(DS::Editing(ES::ChCount(mode))) => 
-                    self.change_count_key_event(key.code, *mode)?,
-                AppMode::Selection(DS::Editing(ES::ChTime(mode))) => {
-                    self.change_time_key_event(key.code, *mode)?;
-                }
-                AppMode::Selection(DS::Delete) => match key.code {
-                    KeyCode::Enter => {
-                        self.set_mode(AppMode::Selection(DS::None));
-                        if let Some(selected) = self.get_list_state(0).selected() {
-                            if self.c_store.len() == 1 {
-                                self.c_store.remove(0);
-                            }
 
-                            self.c_store.remove(selected);
-                            if selected == self.c_store.len() {
-                                self.list_select(0, Some(selected - 1))
-                            }
+        let key: Key = if self.is_super_user {
+            if let Some(key) = InputEvent::poll(self.tick_rate).map(|key| key.code.into()) {
+                key
+            } else { return Ok(()) }
+        } else {
+            if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
+        };
+        match self.get_mode() {
+            AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
+                self.selection_key_event(key)
+            }
+            AppMode::Selection(DS::None) => match key {
+                Key::Char('q') => self.running = false,
+                Key::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
+                _ => {}
+            },
+            AppMode::Counting(n) => match key {
+                Key::Char(charr) if (charr == '=') | (charr == '+') => {
+                    self.get_mut_act_counter()?.increase_by(1);
+                    self.c_store.to_json(SAVE_FILE)
+                }
+                Key::Char('-') => {
+                    self.get_mut_act_counter()?.increase_by(-1);
+                    self.c_store.to_json(SAVE_FILE)
+                }
+                Key::Esc => self.set_mode(AppMode::Selection(DS::None)),
+                Key::Char('q') if n == &0 => {
+                    self.list_deselect(1);
+                    self.set_mode(AppMode::Selection(DS::None))
+                }
+                Key::Char('q') if n == &1 => {
+                    self.set_mode(AppMode::PhaseSelect(DS::None)) 
+                }
+                _ => {}
+            },
+            AppMode::Selection(DS::AddNew) => match key {
+                Key::Esc => {
+                    self.set_mode(AppMode::Selection(DS::None));
+                    self.reset_entry_state(0);
+                }
+                Key::Enter => {
+                    let name = self.get_entry_state(0).get_active_field().clone();
+                    self.c_store.push(Counter::new(name));
+                    self.reset_entry_state(0);
+                    self.set_mode(AppMode::Selection(DS::None));
+                }
+                Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+                Key::Backspace => {
+                    self.get_entry_state(0).pop();
+                }
+                _ => {}
+            },
+            AppMode::Selection(DS::Editing(ES::Rename(mode))) => 
+                self.rename_key_event(key, *mode)?,
+            AppMode::Selection(DS::Editing(ES::ChCount(mode))) => 
+                self.change_count_key_event(key, *mode)?,
+            AppMode::Selection(DS::Editing(ES::ChTime(mode))) => {
+                self.change_time_key_event(key, *mode)?;
+            }
+            AppMode::Selection(DS::Delete) => match key {
+                Key::Enter => {
+                    self.set_mode(AppMode::Selection(DS::None));
+                    if let Some(selected) = self.get_list_state(0).selected() {
+                        if self.c_store.len() == 1 {
+                            self.c_store.remove(0);
+                        }
+
+                        self.c_store.remove(selected);
+                        if selected == self.c_store.len() {
+                            self.list_select(0, Some(selected - 1))
                         }
                     }
-                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
-                    _ => {}
-                },
-                AppMode::PhaseSelect(DS::Editing(_)) => {
-                    self.rename_phase_key_event(key.code)?
                 }
-                AppMode::PhaseSelect(DS::Delete) => match key.code {
-                    KeyCode::Enter => {
-                        todo!();
-                    }
-                    KeyCode::Esc => self.set_mode(AppMode::Selection(DS::None)),
-                    _ => {}
-                },
-                AppMode::PhaseSelect(_) => self.phase_select_key_event(key.code)?,
+                Key::Esc => self.set_mode(AppMode::Selection(DS::None)),
+                _ => {}
+            },
+            AppMode::PhaseSelect(DS::Editing(_)) => {
+                self.rename_phase_key_event(key)?
             }
+            AppMode::PhaseSelect(DS::Delete) => match key {
+                Key::Enter => {
+                    todo!();
+                }
+                Key::Esc => self.set_mode(AppMode::Selection(DS::None)),
+                _ => {}
+            },
+            AppMode::PhaseSelect(_) => self.phase_select_key_event(key)?,
         }
         Ok(())
     }
 
-    fn selection_key_event(&mut self, key: KeyCode) {
+    fn selection_key_event(&mut self, key: Key) {
         let len = self.c_store.len();
         match key {
-            KeyCode::Char('q') => self.running = false,
-            KeyCode::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
-            KeyCode::Char('d') => self.set_mode(AppMode::Selection(DS::Delete)),
-            KeyCode::Char('r') => 
+            Key::Char('q') => self.running = false,
+            Key::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
+            Key::Char('d') => self.set_mode(AppMode::Selection(DS::Delete)),
+            Key::Char('r') => 
                 self.set_mode(AppMode::Selection(DS::Editing(ES::Rename(false)))),
-            KeyCode::Char('e') => 
+            Key::Char('e') => 
                 self.set_mode(AppMode::Selection(DS::Editing(ES::Rename(true)))),
-            KeyCode::Char('f') => {
+            Key::Char('f') => {
                 let selected = self.get_list_state(1).selected().unwrap_or(0);
                 self.list_select(1, Some(selected));
                 self.set_mode(AppMode::PhaseSelect(DS::None)) 
             }
-            KeyCode::Enter => {
+            Key::Enter => {
                 if self.get_act_counter().unwrap().get_phase_len() > 1 {
                     let selected = self.get_list_state(1).selected().unwrap_or(0);
                     self.list_select(1, Some(selected));
@@ -353,13 +359,13 @@ impl App {
                     self.set_mode(AppMode::Counting(0))
                 }
             }
-            KeyCode::Up => {
+            Key::Up => {
                 let mut selected = self.get_list_state(0).selected().unwrap_or(0);
                 selected += len - 1;
                 selected %= len;
                 self.list_select(0, Some(selected));
             }
-            KeyCode::Down => {
+            Key::Down => {
                 let mut selected = self.get_list_state(0).selected().unwrap_or(0);
                 selected += 1;
                 selected %= len;
@@ -369,13 +375,13 @@ impl App {
         }
     }
 
-    fn rename_key_event(&mut self, key: KeyCode, in_editing_mode: bool) -> Result<(), AppError> {
+    fn rename_key_event(&mut self, key: Key, in_editing_mode: bool) -> Result<(), AppError> {
         match key {
-            KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
-            KeyCode::Backspace => {
+            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+            Key::Backspace => {
                 self.get_entry_state(0).pop();
             }
-            KeyCode::Enter => {
+            Key::Enter => {
                 let name = self.get_entry_state(0).get_active_field().clone();
                 self.get_mut_act_counter()?.set_name(&name);
                 self.reset_entry_state(0);
@@ -385,7 +391,7 @@ impl App {
                     self.set_mode(AppMode::Selection(DS::None))
                 }
             }
-            KeyCode::Esc => {
+            Key::Esc => {
                 self.set_mode(AppMode::Selection(DS::None));
                 self.reset_entry_state(0);
             }
@@ -394,15 +400,15 @@ impl App {
         Ok(())
     }
 
-    fn change_count_key_event(&mut self, key: KeyCode, in_editing_mode: bool)
+    fn change_count_key_event(&mut self, key: Key, in_editing_mode: bool)
         -> Result<(), AppError> 
     {
         match key {
-            KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
-            KeyCode::Backspace => {
+            Key::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
+            Key::Backspace => {
                 self.get_entry_state(0).pop();
             }
-            KeyCode::Enter => {
+            Key::Enter => {
                 let count = self.get_entry_state(0)
                     .get_active_field()
                     .parse()
@@ -415,7 +421,7 @@ impl App {
                     self.set_mode(AppMode::Selection(DS::None))
                 }
             }
-            KeyCode::Esc => {
+            Key::Esc => {
                 self.set_mode(AppMode::Selection(DS::None));
                 self.reset_entry_state(0);
             }
@@ -424,15 +430,15 @@ impl App {
         Ok(())
     }
 
-    fn change_time_key_event(&mut self, key: KeyCode, _in_editing_mode: bool)
+    fn change_time_key_event(&mut self, key: Key, _in_editing_mode: bool)
         -> Result<(), AppError> 
     {
         match key {
-            KeyCode::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
-            KeyCode::Backspace => {
+            Key::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
+            Key::Backspace => {
                 self.get_entry_state(0).pop();
             }
-            KeyCode::Enter => {
+            Key::Enter => {
                 let time = self.get_entry_state(0)
                     .get_active_field()
                     .parse()
@@ -441,7 +447,7 @@ impl App {
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::Selection(DS::None))
             }
-            KeyCode::Esc => {
+            Key::Esc => {
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::Selection(DS::None))
             }
@@ -449,18 +455,18 @@ impl App {
         }
         Ok(())
     }
-    fn rename_phase_key_event(&mut self, key: KeyCode) -> Result<(), AppError> {
+    fn rename_phase_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            KeyCode::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
-            KeyCode::Backspace => self.get_entry_state(0).pop(),
-            KeyCode::Enter => {
+            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+            Key::Backspace => self.get_entry_state(0).pop(),
+            Key::Enter => {
                 let phase = self.get_list_state(1).selected().unwrap_or(0);
                 let name  = self.get_entry_state(0).get_active_field().clone();
                 self.get_mut_act_counter()?.set_phase_name(phase, name);
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::PhaseSelect(DS::None))
             }
-            KeyCode::Esc => {
+            Key::Esc => {
                 self.reset_entry_state(0);
                 self.set_mode(AppMode::PhaseSelect(DS::None))
             }
@@ -468,35 +474,35 @@ impl App {
         }
         Ok(())
     }
-    fn phase_select_key_event(&mut self, key: KeyCode) -> Result<(), AppError> {
+    fn phase_select_key_event(&mut self, key: Key) -> Result<(), AppError> {
         let len = self.get_act_counter().unwrap().get_phase_len();
         match key {
-            KeyCode::Char('d') if self.get_act_counter()?.get_phase_len() == 1 => {
+            Key::Char('d') if self.get_act_counter()?.get_phase_len() == 1 => {
                 self.set_mode(AppMode::Selection(DS::None))
             }
-            KeyCode::Char('d') => {
+            Key::Char('d') => {
                 self.set_mode(AppMode::Selection(DS::Delete))
             }
-            KeyCode::Char('n') => self.get_mut_act_counter()?.new_phase(),
-            KeyCode::Char('r') => 
+            Key::Char('n') => self.get_mut_act_counter()?.new_phase(),
+            Key::Char('r') => 
                 self.set_mode(AppMode::PhaseSelect(DS::Editing(ES::Rename(false)))),
-            KeyCode::Up => {
+            Key::Up => {
                 let mut selected = self.get_list_state(1).selected().unwrap_or(0);
                 selected += len - 1;
                 selected %= len;
                 self.list_select(1, Some(selected));
             }
-            KeyCode::Down => {
+            Key::Down => {
                 let mut selected = self.get_list_state(1).selected().unwrap_or(0);
                 selected += 1;
                 selected %= len;
                 self.list_select(1, Some(selected));
             }
-            KeyCode::Enter => {
+            Key::Enter => {
                 self.list_select(1, Some(0));
                 self.set_mode(AppMode::Counting(1));
             }
-            KeyCode::Esc | KeyCode::Char('q') => {
+            Key::Esc | Key::Char('q') => {
                 self.list_deselect(1);
                 self.set_mode(AppMode::Selection(DS::None))
             }

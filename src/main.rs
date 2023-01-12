@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::time::SystemTime;
+use nix::unistd::Uid;
 
 mod counter;
 mod app;
@@ -17,7 +18,10 @@ const FRAME_RATE:    u64  = 25;
 fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
         .expect("Could not create Counters from save file");
-    let mut app = app::App::new(1000 / FRAME_RATE, store);
+
+    let is_root = if !Uid::effective().is_root() { false } else { true };
+
+    let mut app = app::App::new(1000 / FRAME_RATE, store).set_super_user(is_root);
     app = app.start().unwrap();
     println!("Debug Info:\n{}", 
         app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")

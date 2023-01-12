@@ -5,6 +5,7 @@ mod counter;
 mod app;
 mod ui;
 mod widgets;
+mod input;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist

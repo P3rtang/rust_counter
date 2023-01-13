@@ -6,7 +6,7 @@ use crate::{
     FRAME_RATE, TICK_SLOWDOWN, TIME_OUT,
 };
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -243,9 +243,11 @@ impl App {
 
     fn handle_event(&mut self) -> Result<(), AppError> {
         let key: Key = if self.dev_input_fd != 0 {
-            if let Some(key) = InputEvent::poll(self.tick_rate, self.dev_input_fd).map(|key| key.code.into()) {
-                key
-            } else { return Ok(()) }
+            if let Some(key) = InputEvent::poll( self.tick_rate, self.dev_input_fd) {
+                self.debug_info.push(key.clone().to_string());
+                key.code.into() 
+            }
+            else { return Ok(()) }
         } else {
             if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
         };

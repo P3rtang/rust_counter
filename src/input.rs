@@ -1,6 +1,7 @@
 use crossterm::event::KeyCode;
 use nix::unistd::read;
 use nix::poll::{poll, PollFd, PollFlags};
+use std::fmt::Display;
 use std::time::{Instant, Duration};
 
 const EV_KEY: u16 = 0x01;
@@ -8,7 +9,7 @@ const EV_ABS: u16 = 0x03;
 const KEY_ENTER: u16 = 28;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InputEvent {
     pub time: Instant,
     pub type_: u16,
@@ -37,6 +38,12 @@ impl InputEvent {
                 Err(_e) => return None,
             }
         }
+    }
+}
+
+impl Display for InputEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -120,5 +127,11 @@ impl From<u16> for Key {
             96 => Key::Enter,
             _  => Key::Null,
         }
+    }
+}
+
+impl Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

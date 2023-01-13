@@ -10,7 +10,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use nix::fcntl::{open, OFlag};
 use std::cell::{Ref, RefMut};
 use std::io;
 use std::time::{Duration, Instant};
@@ -68,10 +67,9 @@ pub struct App {
     tick_rate:            Duration,
     last_interaction:     Instant,
     running:              bool,
-    is_super_user:        bool,
     cursor_pos:           Option<(u16, u16)>,
     pub debug_info:       Vec<String>,
-    fd:                   i32,
+    dev_input_fd:         i32,
 }
 
 impl App {
@@ -84,19 +82,13 @@ impl App {
             ui_size:          UiWidth::Big,
             running:          true,
             time_show_millis: true,
-            is_super_user:    false,
             cursor_pos:       None,
             debug_info:       vec![],
-            fd:               0,
+            dev_input_fd:     0,
         }
     }
-    pub fn set_super_user(mut self, is_super: bool) -> Self {
-        self.is_super_user = is_super;
-        let fd = match open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()) {
-            Ok(f) => f,
-            Err(_) => { self.is_super_user = false; 0 }
-        };
-        self.fd = fd;
+    pub fn set_super_user(mut self, input_fd: i32) -> Self {
+        self.dev_input_fd = input_fd;
         self
     }
     pub fn start(mut self) -> Result<App, AppError> {
@@ -202,7 +194,7 @@ impl App {
             .ok_or(AppError::GetPhaseError)
     }
 
-    pub fn end(self) -> io::Result<CounterStore> {
+    pub fn end(&self) -> io::Result<CounterStore> {
         enable_raw_mode()?;
         let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = Terminal::new(backend).unwrap();
@@ -214,7 +206,7 @@ impl App {
             DisableMouseCapture
         )?;
         terminal.show_cursor()?;
-        Ok(self.c_store)
+        Ok(self.c_store.clone())
     }
 
     pub fn get_mode(&self) -> &AppMode {
@@ -250,8 +242,8 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-        let key: Key = if self.is_super_user {
-            if let Some(key) = InputEvent::poll(self.tick_rate, self.fd).map(|key| key.code.into()) {
+        let key: Key = if self.dev_input_fd != 0 {
+            if let Some(key) = InputEvent::poll(self.tick_rate, self.dev_input_fd).map(|key| key.code.into()) {
                 key
             } else { return Ok(()) }
         } else {

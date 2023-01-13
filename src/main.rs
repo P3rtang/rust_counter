@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use std::time::SystemTime;
-use nix::unistd::Uid;
+use nix::fcntl::{open, OFlag};
 
 mod counter;
 mod app;
@@ -19,15 +19,20 @@ fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
         .expect("Could not create Counters from save file");
 
-    let is_root = if !Uid::effective().is_root() { false } else { true };
+    let mut app = app::App::new(1000 / FRAME_RATE, store);
 
-    let mut app = app::App::new(1000 / FRAME_RATE, store).set_super_user(is_root);
+    let fd = match open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()) {
+        Ok(f) => f,
+        Err(e) => { app.debug_info.push(e.to_string()); 0}
+    };
+    app = app.set_super_user(fd);
+
     app = app.start().unwrap();
+    let store = app.end().unwrap();
     println!("Debug Info:\n{}", 
         app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")
         .collect::<String>()
     );
-    let store = app.end().unwrap();
     store.to_json(SAVE_FILE);
 }
 

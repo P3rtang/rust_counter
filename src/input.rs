@@ -1,5 +1,4 @@
 use crossterm::event::KeyCode;
-use nix::fcntl::{open, OFlag};
 use nix::unistd::read;
 use nix::poll::{poll, PollFd, PollFlags};
 use std::time::{Instant, Duration};
@@ -18,30 +17,30 @@ pub struct InputEvent {
 }
 
 impl InputEvent {
-    pub fn poll(duration: Duration) -> Option<Self> {
-        let fd = open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()).unwrap();
+    pub fn poll(duration: Duration, fd: i32) -> Option<Self> {
         let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
 
         loop {
-            match poll(&mut poll_fds, duration.as_millis().try_into().unwrap()) {
+            match poll(&mut poll_fds, duration.as_millis() as i32) {
                 Ok(n) => {
                     if n > 0 {
                         let mut buf = [0u8; 24];
                         let _bytes_read = read(fd, &mut buf).unwrap();
                         // here you could parse the input event struct
                         let event: InputEvent = unsafe { std::mem::transmute(buf) };
-                        if event.type_ == EV_KEY && (event.value == 0 || event.value == 1) {
+                        if event.type_ == EV_KEY && event.value == 0 {
                             return Some(event)
                         }
                     }
+                    else { return None }
                 },
-                Err(_e) => break,
+                Err(_e) => return None,
             }
         }
-        return None
     }
 }
 
+#[derive(Debug)]
 pub enum Key {
     Esc,
     Enter,
@@ -101,7 +100,9 @@ impl From<crossterm::event::KeyEvent> for Key {
             KeyCode::KeypadBegin => Key::KeypadBegin,
 
             _ => Key::Null,
+            #[allow(unreachable_patterns)]
             KeyCode::Media(_) => unimplemented!(),
+            #[allow(unreachable_patterns)]
             KeyCode::Modifier(_) => unimplemented!(),
         }
     }
@@ -110,8 +111,14 @@ impl From<crossterm::event::KeyEvent> for Key {
 impl From<u16> for Key {
     fn from(value: u16) -> Self {
         match value {
-            1 => Key::Esc,
-            _ => Key::Null,
+            1  => Key::Esc,
+            13 => Key::Char('='),
+            16 => Key::Char('q'),
+            28 => Key::Enter,
+            74 => Key::Char('-'),
+            78 => Key::Char('+'),
+            96 => Key::Enter,
+            _  => Key::Null,
         }
     }
 }

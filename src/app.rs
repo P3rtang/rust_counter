@@ -10,6 +10,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use nix::fcntl::{open, OFlag};
 use std::cell::{Ref, RefMut};
 use std::io;
 use std::time::{Duration, Instant};
@@ -70,6 +71,7 @@ pub struct App {
     is_super_user:        bool,
     cursor_pos:           Option<(u16, u16)>,
     pub debug_info:       Vec<String>,
+    fd:                   i32,
 }
 
 impl App {
@@ -85,10 +87,16 @@ impl App {
             is_super_user:    false,
             cursor_pos:       None,
             debug_info:       vec![],
+            fd:               0,
         }
     }
     pub fn set_super_user(mut self, is_super: bool) -> Self {
         self.is_super_user = is_super;
+        let fd = match open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()) {
+            Ok(f) => f,
+            Err(_) => { self.is_super_user = false; 0 }
+        };
+        self.fd = fd;
         self
     }
     pub fn start(mut self) -> Result<App, AppError> {
@@ -242,9 +250,8 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-
         let key: Key = if self.is_super_user {
-            if let Some(key) = InputEvent::poll(self.tick_rate).map(|key| key.code.into()) {
+            if let Some(key) = InputEvent::poll(self.tick_rate, self.fd).map(|key| key.code.into()) {
                 key
             } else { return Ok(()) }
         } else {
@@ -337,7 +344,7 @@ impl App {
     fn selection_key_event(&mut self, key: Key) {
         let len = self.c_store.len();
         match key {
-            Key::Char('q') => self.running = false,
+            Key::Char('q') | Key::Esc => self.running = false,
             Key::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
             Key::Char('d') => self.set_mode(AppMode::Selection(DS::Delete)),
             Key::Char('r') => 

@@ -11,7 +11,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::cell::{Ref, RefMut};
-use std::io;
+use std::{io, any};
 use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
@@ -242,15 +242,25 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-        let key: Key = if self.dev_input_fd != 0 {
-            if let Some(key) = InputEvent::poll( self.tick_rate, self.dev_input_fd) {
-                self.debug_info.push(key.clone().to_string());
-                key.code.into() 
+
+        let key = match self.get_mode() {
+            AppMode::Counting(_) if self.dev_input_fd != 0 => {
+                if let Some(key) = InputEvent::poll(self.tick_rate, self.dev_input_fd) {
+                    key.code.into()
+                } else { return Ok(()) }
             }
-            else { return Ok(()) }
-        } else {
-            if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
+            _ => if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
         };
+
+       // let key: Key = if self.dev_input_fd != 0 && self.get_mode() == &AppMode::Counting() {
+       //     if let Some(key) = InputEvent::poll( self.tick_rate, self.dev_input_fd) {
+       //         self.debug_info.push(key.clone().to_string());
+       //         key.code.into() 
+       //     }
+       //     else { return Ok(()) }
+       // } else {
+       //     if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
+       // };
         match self.get_mode() {
             AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
                 self.selection_key_event(key)

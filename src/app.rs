@@ -11,7 +11,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::cell::{Ref, RefMut};
-use std::{io, any};
+use std::io;
 use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;

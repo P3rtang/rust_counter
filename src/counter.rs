@@ -52,7 +52,6 @@ impl Counter {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-
     /// Sets the time of this `Counter`.
     /// time in minutes
     pub fn set_time(&mut self, time: Duration) {

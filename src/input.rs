@@ -6,7 +6,6 @@ use std::time::{Instant, Duration};
 
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
-const KEY_ENTER: u16 = 28;
 
 #[repr(C)]
 #[derive(Debug, Clone)]

@@ -73,32 +73,32 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
     // if any the app is in an entry state draw them last so they go on top
     match app.get_mode() {
         AppMode::Selection(DS::AddNew) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Name new Counter", (50, 10))
+            draw_entry(f, app.get_entry_state(0), "Name new Counter", (50, 10))
         }
         AppMode::PhaseSelect(DS::Editing(_)) => {
             let phase_title = format!(
                 "give phase {}\n a name",
                 app.get_act_phase_name()?
             );
-            draw_entry(f, &mut app.get_entry_state(0), &phase_title, (50, 10));
+            draw_entry(f, app.get_entry_state(0), phase_title, (50, 10));
         }
         AppMode::Selection(DS::Editing(ES::Rename(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Name", (50, 10)) 
+            draw_entry(f, app.get_entry_state(0), "Change Name", (50, 10)) 
         }
         AppMode::Selection(DS::Editing(ES::ChCount(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Count", (50, 10))
+            draw_entry(f, app.get_entry_state(0), "Change Count", (50, 10))
         }
         AppMode::Selection(DS::Editing(ES::ChTime(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Time", (50, 10));
+            draw_entry(f, app.get_entry_state(0), "Change Time", (50, 10));
         }
         AppMode::Selection(DS::Delete) => {
             let name = app.get_act_counter()?.get_name();
-            draw_delete_dialog(f, &name)
+            draw_delete_dialog(f, name)
         }
         AppMode::PhaseSelect(DS::Delete) =>  {
             if app.get_act_counter()?.get_phase_count() > 1 {
                 let name = app.get_act_phase_name()?;
-                draw_delete_dialog(f, &name)
+                draw_delete_dialog(f, name)
             }
         }
         _ => {}
@@ -166,7 +166,7 @@ fn draw_delete_dialog
     let block = Block::default()
         .borders(Borders::ALL);
     let dialog = Dialog::default()
-        .message(&format!("Are you sure\nyou want to delete {}?", name))
+        .message(format!("Are you sure\nyou want to delete {name}?"))
         .style(Style::default().fg(Color::Red).bg(GRAY))
         .keys(KeyCode::Esc, KeyCode::Enter)
         .block(block);

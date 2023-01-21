@@ -18,6 +18,7 @@ use DialogState as DS;
 use EditingState as ES;
 use crate::input::{InputEvent, Key};
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum AppError {
     GetCounterError,
@@ -131,7 +132,7 @@ impl App {
             // is one
             // if the TICK_SLOWDOWN time has been reached put the program in a slower poll rate
             if Instant::now() - self.last_interaction > Duration::from_secs(TIME_OUT) {
-                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{:?}", e))}
+                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{e:?}"))}
                 self.last_interaction = Instant::now();
                 // set previous time to `Now` so the pause time doesn't get added to the counter
                 previous_time = Instant::now();
@@ -143,7 +144,7 @@ impl App {
             if crossterm::event::poll(self.tick_rate.saturating_sub(Instant::now() - now_time))
                 .unwrap()
             {
-                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{:?}", e))}
+                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{e:?}"))}
                 self.last_interaction = Instant::now();
                 self.time_show_millis = true;
                 self.tick_rate = Duration::from_millis(1000 / FRAME_RATE)
@@ -155,18 +156,18 @@ impl App {
     pub fn get_act_counter(&self) -> Result<Ref<Counter>, AppError> {
         let selection = self.get_list_state(0).selected().unwrap_or(0);
         if let Some(counter) = self.c_store.get(selection) {
-            return Ok(counter)
+            Ok(counter)
         } else {
-            return Err(AppError::GetCounterError)
+            Err(AppError::GetCounterError)
         }
     }
 
     pub fn get_mut_act_counter(&self) -> Result<RefMut<Counter>, AppError> {
         let selection = self.get_list_state(0).selected().unwrap_or(0);
         if let Some(counter) = self.c_store.get_mut(selection) {
-            return Ok(counter)
+            Ok(counter)
         } else {
-            return Err(AppError::GetCounterError)
+            Err(AppError::GetCounterError)
         }
     }
 
@@ -210,7 +211,7 @@ impl App {
     }
 
     pub fn get_mode(&self) -> &AppMode {
-        return &self.state.mode
+        &self.state.mode
     }
 
     pub fn set_mode(&mut self, mode: AppMode) {

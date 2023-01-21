@@ -84,7 +84,7 @@ impl Counter {
     }
     
     pub fn new_phase(&mut self) {
-        self.phases.insert(0, Phase::new(&format!("Phase {}", self.phases.len() + 1), 0, Duration::default()))
+        self.phases.insert(0, Phase::new(format!("Phase {}", self.phases.len() + 1), 0, Duration::default()))
     }
     pub fn get_phase(&self, idx: usize) -> Option<&Phase> {
         self.phases.get(idx)
@@ -241,7 +241,7 @@ impl Progress {
                 }
             }
         }
-        return self.progress
+        self.progress
     }
 }
 

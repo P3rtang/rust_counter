@@ -61,7 +61,7 @@ impl<'a> Widget for Dialog<'a> {
         any other widget below */
         let widget_empty = Text::raw(" ".repeat(widget_area.width as usize));
         for i in 0..widget_area.height {
-            buf.set_spans(widget_area.x, widget_area.y + i as u16, &widget_empty.lines[0], widget_area.width);
+            buf.set_spans(widget_area.x, widget_area.y + i, &widget_empty.lines[0], widget_area.width);
         }
 
         // showing title two line above the entry bar

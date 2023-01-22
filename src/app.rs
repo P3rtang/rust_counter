@@ -37,6 +37,7 @@ pub enum AppMode {
     Selection(DialogState),
     PhaseSelect(DialogState),
     Counting(u8),
+    KeyLogger(u8),
 }
 
 impl Default for AppMode {
@@ -108,7 +109,7 @@ impl App {
         while self.running {
             // timing the execution time of the loop and add it to the counter time
             now_time = Instant::now();
-            if let AppMode::Counting(_) = self.get_mode() {
+            if let AppMode::Counting(_) | AppMode::KeyLogger(_) = self.get_mode() {
                 self.get_mut_act_counter().unwrap()
                     .increase_time(now_time - previous_time);
             }
@@ -243,25 +244,17 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-
-        let key = match self.get_mode() {
-            AppMode::Counting(_) if self.dev_input_fd != 0 => {
+        let key: Key = match self.get_mode() {
+            AppMode::KeyLogger(_) => {
                 if let Some(key) = InputEvent::poll(self.tick_rate, self.dev_input_fd) {
-                    key.code.into()
-                } else { return Ok(()) }
+                    key.code.into() }
+                else { return Ok(()) }
             }
-            _ => if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
+            _ => {
+                if let Event::Key(key) = event::read().unwrap() { key.into() }
+                else { return Ok(()) }
+            }
         };
-
-       // let key: Key = if self.dev_input_fd != 0 && self.get_mode() == &AppMode::Counting() {
-       //     if let Some(key) = InputEvent::poll( self.tick_rate, self.dev_input_fd) {
-       //         self.debug_info.push(key.clone().to_string());
-       //         key.code.into() 
-       //     }
-       //     else { return Ok(()) }
-       // } else {
-       //     if let Event::Key(key) = event::read().unwrap() { key.into() } else { return Ok(()) }
-       // };
         match self.get_mode() {
             AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
                 self.selection_key_event(key)
@@ -271,25 +264,20 @@ impl App {
                 Key::Char('n') => self.set_mode(AppMode::Selection(DS::AddNew)),
                 _ => {}
             },
-            AppMode::Counting(n) => match key {
-                Key::Char(charr) if (charr == '=') | (charr == '+') => {
-                    self.get_mut_act_counter()?.increase_by(1);
-                    self.c_store.to_json(SAVE_FILE)
-                }
-                Key::Char('-') => {
-                    self.get_mut_act_counter()?.increase_by(-1);
-                    self.c_store.to_json(SAVE_FILE)
-                }
-                Key::Esc => self.set_mode(AppMode::Selection(DS::None)),
-                Key::Char('q') if n == &0 => {
-                    self.list_deselect(1);
-                    self.set_mode(AppMode::Selection(DS::None))
-                }
-                Key::Char('q') if n == &1 => {
-                    self.set_mode(AppMode::PhaseSelect(DS::None)) 
-                }
-                _ => {}
+            AppMode::Counting(mode) => {
+                self.counter_key_event(key, mode.clone())?
             },
+            AppMode::KeyLogger(mode) => {
+                match key {
+                    Key::Char('q') | Key::Esc => {
+                        self.set_mode(AppMode::Counting(mode.clone()));
+                        return Ok(())
+                    }
+                    _ => {}
+                }
+                self.counter_key_event(key, mode.clone())?;
+                event::read().unwrap();
+            }
             AppMode::Selection(DS::AddNew) => match key {
                 Key::Esc => {
                     self.set_mode(AppMode::Selection(DS::None));
@@ -385,6 +373,32 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn counter_key_event(&mut self, key: Key, mode: u8) -> Result<(), AppError> {
+        match key {
+            Key::Char(charr) if (charr == '=') | (charr == '+') => {
+                self.get_mut_act_counter()?.increase_by(1);
+                self.c_store.to_json(SAVE_FILE)
+            }
+            Key::Char('-') => {
+                self.get_mut_act_counter()?.increase_by(-1);
+                self.c_store.to_json(SAVE_FILE)
+            }
+            Key::Char('*') => {
+                self.set_mode(AppMode::KeyLogger(mode))
+            }
+            Key::Esc => self.set_mode(AppMode::Selection(DS::None)),
+            Key::Char('q') if mode == 0 => {
+                self.list_deselect(1);
+                self.set_mode(AppMode::Selection(DS::None))
+            }
+            Key::Char('q') if mode == 1 => {
+                self.set_mode(AppMode::PhaseSelect(DS::None)) 
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn rename_key_event(&mut self, key: Key, in_editing_mode: bool) -> Result<(), AppError> {

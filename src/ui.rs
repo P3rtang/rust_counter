@@ -187,9 +187,9 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
     use AppMode::*;
 
     let (color, title) = match app.get_mode() {
-        PhaseSelect(_) | Counting(1) 
+        PhaseSelect(_) | Counting(1) | KeyLogger(1)
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
-        PhaseSelect(_) | Counting(_) => (Color::White, ""),
+        PhaseSelect(_) | Counting(_) | KeyLogger(_) => (Color::White, ""),
         _ => (BLUE, "Counters"),
     };
 
@@ -212,9 +212,9 @@ fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area:
     use AppMode::*;
     
     let (color, title) = match app.get_mode() {
-        Selection(_) | Counting(0) 
+        Selection(_) | Counting(0) | KeyLogger(0)
             if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
-        Selection(_) | Counting(_) => (Color::White, ""),
+        Selection(_) | Counting(_) | KeyLogger(_) => (Color::White, ""),
         _ => (BLUE, "Phases")
     };
 
@@ -248,16 +248,17 @@ fn draw_text_boxes
     use AppMode::*;
     let (color, title) = match app.get_mode() {
         Counting(_) => (BLUE, format!(
-            "{} - {}",
+            "{}-{}",
             app.get_act_counter()?.get_name(),
             app.get_act_phase_name()?
         )),
+        KeyLogger(_) => (ORANGE, format!("Keylogger {}", app.get_act_phase_name()?)),
         _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
         _ => (Color::White, "".to_string())
     };
 
     let (active_count, active_time) = match app.get_mode() {
-        PhaseSelect(_) | Counting(1) => (
+        PhaseSelect(_) | Counting(1) | KeyLogger(1) => (
             app.get_act_phase_count()?,
             app.get_act_phase_time()?,
         ),
@@ -301,7 +302,7 @@ fn draw_progress_gauge
 
     let progress = app.get_act_counter().map_or(0.0, |c| c.get_progress());
     match app.get_mode() {
-        Counting(_) if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => {}
+        Counting(_) | KeyLogger(_) if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => {}
         _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
         _ => {}
     }

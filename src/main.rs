@@ -21,7 +21,10 @@ fn main() {
 
     let mut app = app::App::new(1000 / FRAME_RATE, store);
 
-    let fd = match open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()) {
+    let fd = match open(
+        "/dev/input/event5",
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
+    ) {
         Ok(f) => f,
         Err(e) => { app.debug_info.push(e.to_string()); 0}
     };

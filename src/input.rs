@@ -4,15 +4,15 @@ use nix::poll::{poll, PollFd, PollFlags};
 use std::fmt::Display;
 use std::sync::atomic::{AtomicU8, Ordering, AtomicI8};
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle, sleep};
+use std::thread::{self, JoinHandle};
 use std::time::{Instant, Duration};
-
-use crate::app::App;
 
 const REPEAT_DELAY: Duration = Duration::from_millis(500);
 const REPEAT_RATE : Duration = Duration::from_millis(50);
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
+
+// TODO: this file should maybe be its own module or even github project
 
 enum Modifier {
     Shift,
@@ -45,6 +45,7 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
 type EventStream = Arc<Mutex<Vec<Event>>>;
 
 pub struct EventHandler {
+    // TODO: factor out these arc mutex structures
     mode: Arc<Mutex<AtomicU8>>,
     file_descriptor: Arc<Mutex<AtomicI8>>,
     event_stream: EventStream,
@@ -70,8 +71,6 @@ impl EventHandler {
                 match mode.clone().into() {
                     HandlerMode::Terminal => {
                         match crossterm::event::read().unwrap() {
-                            crossterm::event::Event::FocusGained => {}
-                            crossterm::event::Event::FocusLost => {}
                             crossterm::event::Event::Key(key) => {
                                 let event = Event { 
                                     type_: EventType::KeyEvent(key.into()),
@@ -80,15 +79,16 @@ impl EventHandler {
                                 };
                                 event_stream.lock().unwrap().insert(0, event)
                             }
+                            // TODO: integrate mouse events
                             crossterm::event::Event::Mouse(_) => {}
-                            crossterm::event::Event::Paste(_) => {}
-                            crossterm::event::Event::Resize(_, _) => {}
+                            _ => {}
                         }
                     }
                     HandlerMode::DevInput => {
-                        if let Some(event) = InputEvent::poll(0, fd.lock().unwrap().load(Ordering::SeqCst) as i32) {
+                        if let Some(event) = DevInputEvent::poll(0, fd.lock().unwrap().load(Ordering::SeqCst) as i32) {
                             event_stream.lock().unwrap().insert(0, event.into())
                         }
+                        // TODO: use crossterm mouse events in this context
                     }
                 }
             }
@@ -116,40 +116,14 @@ impl EventHandler {
     pub fn set_fd(&self, fd: i32) {
         self.file_descriptor.lock().unwrap().store(fd as i8, Ordering::SeqCst)
     }
+    pub fn stop(&mut self) {
+        todo!()
+    }
 }
 
 impl std::fmt::Display for EventHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "event: {:?}", self.event_stream.lock().unwrap())
-    }
-}
-
-pub struct Das {
-    last_time: Instant,
-    last_key:  Key,
-    delay: Duration,
-}
-
-impl Das {
-    fn eat_input(&mut self, event: Event) -> bool {
-        match event.type_ {
-            EventType::MouseEvent(_) => return false,
-            EventType::KeyEvent(key) => {
-                if key == self.last_key && event.time - self.last_time > self.delay {
-                    self.delay = REPEAT_RATE;
-                    return false
-                } else { 
-                    self.last_key = key;
-                    return true 
-                }
-            }
-        }
-    }
-}
-
-impl Default for Das {
-    fn default() -> Self {
-        return Self { last_time: Instant::now(), last_key: Key::Null, delay: REPEAT_DELAY }
     }
 }
 
@@ -160,8 +134,8 @@ pub struct Event {
     mode: HandlerMode,
 }
 
-impl From<InputEvent> for Event {
-    fn from(value: InputEvent) -> Self {
+impl From<DevInputEvent> for Event {
+    fn from(value: DevInputEvent) -> Self {
         Self {
             type_: EventType::KeyEvent(value.code.into()),
             time: Instant::now(),
@@ -178,14 +152,14 @@ impl std::fmt::Display for Event {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct InputEvent {
+pub struct DevInputEvent {
     pub time: Instant,
     pub type_: u16,
     pub code: u16,
     pub value: i32,
 }
 
-impl InputEvent {
+impl DevInputEvent {
     pub fn poll(duration: i32, fd: i32) -> Option<Self> {
         let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
 
@@ -194,7 +168,7 @@ impl InputEvent {
                 if n > 0 {
                     let mut buf = [0u8; 24];
                     let _bytes_read = read(fd, &mut buf).unwrap();
-                    let event: InputEvent = unsafe { std::mem::transmute(buf) };
+                    let event: DevInputEvent = unsafe { std::mem::transmute(buf) };
                     if event.type_ == EV_KEY && event.value == 0 {
                         return Some(event)
                     } else { return None }
@@ -206,7 +180,7 @@ impl InputEvent {
     }
 }
 
-impl Display for InputEvent {
+impl Display for DevInputEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
@@ -291,6 +265,7 @@ impl From<u16> for Key {
             78 => Key::Char('+'),
             96 => Key::Enter,
             _  => Key::Null,
+            // TODO: add more keys
         }
     }
 }

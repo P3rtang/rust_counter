@@ -1,22 +1,19 @@
 use crate::widgets::entry::EntryState;
 use crate::ui::{self, UiWidth};
 use crate::SAVE_FILE;
-use crate::{
-    counter::{Counter, CounterStore},
-    FRAME_RATE, TICK_SLOWDOWN, TIME_OUT,
-};
+use crate::counter::{Counter, CounterStore};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::cell::{Ref, RefMut};
+use std::cell::{Ref, RefMut, RefCell};
 use std::io;
 use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
-use crate::input::{InputEvent, Key};
+use crate::input::{Key, EventHandler, EventType};
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
@@ -70,8 +67,8 @@ pub struct App {
     last_interaction:     Instant,
     running:              bool,
     cursor_pos:           Option<(u16, u16)>,
-    pub debug_info:       Vec<String>,
-    dev_input_fd:         i32,
+    pub event_handler:    EventHandler,
+    pub debug_info:       RefCell<Vec<String>>,
 }
 
 impl App {
@@ -85,12 +82,12 @@ impl App {
             running:          true,
             time_show_millis: true,
             cursor_pos:       None,
-            debug_info:       vec![],
-            dev_input_fd:     0,
+            event_handler:    EventHandler::new(0),
+            debug_info:       RefCell::new(vec![]),
         }
     }
-    pub fn set_super_user(mut self, input_fd: i32) -> Self {
-        self.dev_input_fd = input_fd;
+    pub fn set_super_user(self, input_fd: i32) -> Self {
+        self.event_handler.set_fd(input_fd);
         self
     }
     pub fn start(mut self) -> Result<App, AppError> {
@@ -108,6 +105,7 @@ impl App {
 
         while self.running {
             // timing the execution time of the loop and add it to the counter time
+            // only do this in counting mode
             now_time = Instant::now();
             if let AppMode::Counting(_) | AppMode::KeyLogger(_) = self.get_mode() {
                 self.get_mut_act_counter().unwrap()
@@ -126,29 +124,8 @@ impl App {
                 terminal.set_cursor(pos.0, pos.1)?;
             }
 
-            // handle input events
-            // if timeout time has been reached since the last interaction we call the blocking
-            // handle_event function by doing so pausing the app until a new input is given
-            // otherwise check if there is an input event and only call the blocking fn when there
-            // is one
-            // if the TICK_SLOWDOWN time has been reached put the program in a slower poll rate
-            if Instant::now() - self.last_interaction > Duration::from_secs(TIME_OUT) {
-                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{e:?}"))}
-                self.last_interaction = Instant::now();
-                // set previous time to `Now` so the pause time doesn't get added to the counter
-                previous_time = Instant::now();
-                self.time_show_millis = true;
-            } else if Instant::now() - self.last_interaction > Duration::from_secs(TICK_SLOWDOWN) {
-                self.time_show_millis = false;
-                self.tick_rate = Duration::from_millis(500);
-            }
-            if crossterm::event::poll(self.tick_rate.saturating_sub(Instant::now() - now_time))
-                .unwrap()
-            {
-                if let Err(e) = self.handle_event() { self.debug_info.push(format!("{e:?}"))}
-                self.last_interaction = Instant::now();
-                self.time_show_millis = true;
-                self.tick_rate = Duration::from_millis(1000 / FRAME_RATE)
+            while self.event_handler.has_event() {
+                self.handle_event()?;
             }
         }
         Ok(self)
@@ -244,17 +221,10 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-        let key: Key = match self.get_mode() {
-            AppMode::KeyLogger(_) => {
-                if let Some(key) = InputEvent::poll(self.tick_rate, self.dev_input_fd) {
-                    key.code.into() }
-                else { return Ok(()) }
-            }
-            _ => {
-                if let Event::Key(key) = event::read().unwrap() { key.into() }
-                else { return Ok(()) }
-            }
-        };
+        let key = if let Some(event_type) = self.event_handler.poll() {
+            if let EventType::KeyEvent(key) = event_type.type_ { key } else { return Ok(()) }
+        } else { return Ok(()) };
+
         match self.get_mode() {
             AppMode::Selection(DS::None) if self.c_store.len() > 0 => {
                 self.selection_key_event(key)
@@ -269,8 +239,9 @@ impl App {
             },
             AppMode::KeyLogger(mode) => {
                 match key {
-                    Key::Char('q') | Key::Esc => {
+                    Key::Char('q') | Key::Esc | Key::Char('*') => {
                         self.set_mode(AppMode::Counting(mode.clone()));
+                        self.event_handler.toggle_mode();
                         return Ok(())
                     }
                     _ => {}
@@ -386,6 +357,7 @@ impl App {
                 self.c_store.to_json(SAVE_FILE)
             }
             Key::Char('*') => {
+                self.event_handler.toggle_mode();
                 self.set_mode(AppMode::KeyLogger(mode))
             }
             Key::Esc => self.set_mode(AppMode::Selection(DS::None)),

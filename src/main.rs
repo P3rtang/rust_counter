@@ -26,14 +26,14 @@ fn main() {
         OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
     ) {
         Ok(f) => f,
-        Err(e) => { app.debug_info.push(e.to_string()); 0}
+        Err(e) => { app.debug_info.borrow_mut().push(e.to_string()); 0}
     };
     app = app.set_super_user(fd);
 
     app = app.start().unwrap();
     let store = app.end().unwrap();
     println!("Debug Info:\n{}", 
-        app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")
+        app.debug_info.borrow().iter().map(|debug_line| debug_line.to_string() + "\n")
         .collect::<String>()
     );
     store.to_json(SAVE_FILE);

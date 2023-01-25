@@ -255,6 +255,10 @@ impl App {
         self.state.mode &= mode.complement()
     }
 
+    fn toggle_mode(&mut self, mode: AppMode) {
+        self.state.mode ^= mode
+    }
+
     fn close_dialog(&mut self) {
         self.state.dialog = DialogState::None;
         self.state.mode &= AppMode::DIALOG_OPEN
@@ -296,6 +300,10 @@ impl App {
         let key = if let Some(event_type) = self.event_handler.poll() {
             if let EventType::KeyEvent(key) = event_type.type_ { key } else { return Ok(()) }
         } else { return Ok(()) };
+
+        if key == Key::Char('`') {
+            self.toggle_mode(AppMode::DEBUGGING)
+        }
 
         // parsing the state the app is in return an error when in an impossible list_states
         // otherwise directing the key to the correct input parser
@@ -581,7 +589,7 @@ pub struct AppState<const T:usize, const U:usize> {
 impl<const T:usize, const U:usize> AppState<T, U> {
     fn new() -> Self {
         Self { 
-            mode:         AppMode::default() | AppMode::DEBUGGING,
+            mode:         AppMode::default(),
             dialog:       DialogState::None,
             list_states:  vec![ ListState::default(); T],
             entry_states: vec![EntryState::default(); U],

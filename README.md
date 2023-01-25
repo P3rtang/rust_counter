@@ -1,8 +1,8 @@
 # Counter TUI
 
-This is a simple counter app that can be run in any modern terminal emulator  
-The app is mainly geared towards logging progress on shiny hunting pokemon,  
-but it should work just as well for logging anything else  
+This is a simple counter app that can be run in any modern terminal emulator
+The app is mainly geared towards logging progress on shiny hunting pokemon,
+but it should work just as well for logging anything else
 
 ## features
 Some of the major features are:
@@ -22,12 +22,7 @@ Some of the major features are:
     ```
 
 ## keylogger
-This section will talk about the keylogger and it's safety  
-The main reason this program includes a keylogger is to act on inputs without the window having focus  
-If you'd want to increase the counter by pressing plus without a keylogger  
-you first need to bring the window the counter is running in back in focus and only then can it register the keypress  
-The keylogger bypasses this so you can use the counter in the background  
-
+This section will talk about the keylogger and it's safety
 - Linux  
   On linux the keylogging function can only be activated by running the program as super user,  
   this is done by reading from /dev/input/  

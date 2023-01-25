@@ -1,7 +1,13 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers, DisableMouseCapture};
+use crossterm::execute;
+use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen, enable_raw_mode};
 use nix::unistd::read;
 use nix::poll::{poll, PollFd, PollFlags};
+use tui::Terminal;
+use tui::backend::CrosstermBackend;
 use std::fmt::Display;
+use std::io;
+use std::process::exit;
 use std::sync::atomic::{AtomicU8, Ordering, AtomicI32, AtomicBool};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -35,12 +41,6 @@ impl From<PoisonError<MutexGuard<'_, Vec<Event>>>> for ThreadError {
     fn from(_: PoisonError<MutexGuard<'_, Vec<Event>>>) -> Self {
         Self::EventStreamLock
     }
-}
-
-enum Modifier {
-    Shift,
-    Esc,
-    Control,
 }
 
 #[derive(Debug, Clone)]
@@ -101,10 +101,15 @@ impl EventHandler {
                         match crossterm::event::read().unwrap() {
                             crossterm::event::Event::Key(key) => {
                                 let event = Event { 
-                                    type_: EventType::KeyEvent(key.into()),
+                                    type_: EventType::KeyEvent(key.clone().into()),
+                                    modifiers: key.modifiers,
                                     time: Instant::now(),
                                     mode: HandlerMode::Terminal,
                                 };
+                                if key.code == KeyCode::Char('c') && event.modifiers.intersects(KeyModifiers::CONTROL) {
+                                    end().unwrap();
+                                    exit(2)
+                                }
                                 // TODO: when ctrl+c is pressed close the program no matter what
                                 event_stream.lock().unwrap().insert(0, event);
                             }
@@ -173,9 +178,25 @@ impl std::fmt::Display for EventHandler {
     }
 }
 
+fn end() -> io::Result<()> {
+    enable_raw_mode()?;
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend).unwrap();
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct Event {
     pub type_: EventType,
+    pub modifiers: KeyModifiers,
     pub time: Instant,
     mode: HandlerMode,
 }
@@ -184,6 +205,7 @@ impl From<DevInputEvent> for Event {
     fn from(value: DevInputEvent) -> Self {
         Self {
             type_: EventType::KeyEvent(value.code.into()),
+            modifiers: KeyModifiers::NONE,
             time: Instant::now(),
             mode: HandlerMode::DevInput
         }

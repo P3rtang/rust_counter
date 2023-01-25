@@ -7,7 +7,7 @@ use tui::{
     Frame
 };
 use std::{io::Stdout, time::Duration};
-use crate::app::{App, AppMode, DialogState as DS, EditingState as ES, AppError, DebugKey};
+use crate::app::{App, AppMode, DialogState as DS, EditingState as ES, AppError};
 use crate::widgets::entry::{Entry, EntryState};
 use crate::widgets::dialog::Dialog;
 

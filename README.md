@@ -6,9 +6,9 @@ but it should work just as well for logging anything else
 
 ## features
 Some of the major features are:
-###### calculating odds when hunting pokemon
-###### keeping track of hunt phases
-###### optional keylogger (WARNING read section on the keylogger for safety)
+- calculating odds when hunting pokemon
+- keeping track of hunt phases
+- optional keylogger (WARNING read section on the keylogger for safety)
 
 ## installing
 - Linux

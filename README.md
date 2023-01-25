@@ -12,12 +12,14 @@ Some of the major features are:
 
 ## installing
 - Linux
-
-    `make install`
+    ```
+    make install
+    ```
 
 - Other platforms
-
-    `cargo build --release`
+    ```
+    cargo build --release
+    ```
 
 ## keylogger
 This section will talk about the keylogger and it's safety
@@ -28,7 +30,6 @@ This section will talk about the keylogger and it's safety
   
   This being said the keylogger can run without sudo, but this in my opinion is more dangerous,  
   and that is by adding your user to the input group with  
-
   `usermod -aG input $USER`  
   but as stated above I do not recommend this as any program can now read /dev/input/ without sudo  
 - other platforms  

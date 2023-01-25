@@ -115,7 +115,7 @@ impl fmt::Display for Counter {
     } 
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CounterStore {
     /// An object to hold multiple counters in like a vec but specific for Counter
     ///

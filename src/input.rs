@@ -2,8 +2,8 @@ use crossterm::event::KeyCode;
 use nix::unistd::read;
 use nix::poll::{poll, PollFd, PollFlags};
 use std::fmt::Display;
-use std::sync::atomic::{AtomicU8, Ordering, AtomicI8};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU8, Ordering, AtomicI32, AtomicBool};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Instant, Duration};
 
@@ -12,7 +12,30 @@ const REPEAT_RATE : Duration = Duration::from_millis(50);
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
 
+type EventStream = Arc<Mutex<Vec<Event>>>;
+type HandlerModeThread = Arc<Mutex<AtomicU8>>;
+type FileDescriptorThread = Arc<Mutex<AtomicI32>>;
+type ThreadRunning = Arc<Mutex<AtomicBool>>;
+
 // TODO: this file should maybe be its own module or even github project
+
+#[derive(Debug)]
+pub enum ThreadError {
+    ThreadStateLock,
+    EventStreamLock,
+}
+
+impl From<PoisonError<MutexGuard<'_, AtomicBool>>> for ThreadError {
+    fn from(_: PoisonError<MutexGuard<'_, AtomicBool>>) -> Self {
+        Self::ThreadStateLock
+    }
+}
+
+impl From<PoisonError<MutexGuard<'_, Vec<Event>>>> for ThreadError {
+    fn from(_: PoisonError<MutexGuard<'_, Vec<Event>>>) -> Self {
+        Self::EventStreamLock
+    }
+}
 
 enum Modifier {
     Shift,
@@ -42,32 +65,37 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
     }
 }
 
-type EventStream = Arc<Mutex<Vec<Event>>>;
-
 pub struct EventHandler {
-    // TODO: factor out these arc mutex structures
-    mode: Arc<Mutex<AtomicU8>>,
-    file_descriptor: Arc<Mutex<AtomicI8>>,
-    event_stream: EventStream,
-    thread_terminal: JoinHandle<()>,
+    mode:                 HandlerModeThread,
+    file_descriptor:      FileDescriptorThread,
+    event_stream:         EventStream,
+    thread_terminal:      JoinHandle<()>,
+    thread_running_state: ThreadRunning,
 }
 
 impl EventHandler {
     pub fn new(fd: i32) -> Self {
         let mode = Arc::new(Mutex::new(AtomicU8::new(HandlerMode::Terminal as u8)));
-        let file_descriptor = Arc::new(Mutex::new(AtomicI8::new(fd as i8)));
+        let file_descriptor = Arc::new(Mutex::new(AtomicI32::new(fd)));
         let event_stream: EventStream = Arc::new(Mutex::new(vec![]));
-        let thread_terminal = EventHandler::spawn_thread(event_stream.clone(), mode.clone(), file_descriptor.clone());
+        let thread_running_state = Arc::new(Mutex::new(AtomicBool::new(false)));
+        let thread_terminal = EventHandler::spawn_thread(event_stream.clone(), mode.clone(), file_descriptor.clone(), thread_running_state.clone());
         Self { 
             mode,
             file_descriptor,
             event_stream,
             thread_terminal,
+            thread_running_state,
         }
     }
-    fn spawn_thread(event_stream: EventStream, mode: Arc<Mutex<AtomicU8>> , fd: Arc<Mutex<AtomicI8>>) -> JoinHandle<()> {
+    fn spawn_thread(
+        event_stream: EventStream,
+        mode: HandlerModeThread,
+        fd: FileDescriptorThread,
+        thread_running_state: ThreadRunning,
+    ) -> JoinHandle<()> {
         thread::spawn(move || {
-            loop {
+            while thread_running_state.lock().unwrap().load(Ordering::SeqCst) {
                 match mode.clone().into() {
                     HandlerMode::Terminal => {
                         match crossterm::event::read().unwrap() {
@@ -77,7 +105,8 @@ impl EventHandler {
                                     time: Instant::now(),
                                     mode: HandlerMode::Terminal,
                                 };
-                                event_stream.lock().unwrap().insert(0, event)
+                                // TODO: when ctrl+c is pressed close the program no matter what
+                                event_stream.lock().unwrap().insert(0, event);
                             }
                             // TODO: integrate mouse events
                             crossterm::event::Event::Mouse(_) => {}
@@ -85,7 +114,7 @@ impl EventHandler {
                         }
                     }
                     HandlerMode::DevInput => {
-                        if let Some(event) = DevInputEvent::poll(0, fd.lock().unwrap().load(Ordering::SeqCst) as i32) {
+                        if let Some(event) = DevInputEvent::poll(-1, fd.lock().unwrap().load(Ordering::SeqCst) as i32) {
                             event_stream.lock().unwrap().insert(0, event.into())
                         }
                         // TODO: use crossterm mouse events in this context
@@ -96,10 +125,14 @@ impl EventHandler {
     }
     pub fn toggle_mode(&mut self) {
         if self.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 { return }
+        self.clear();
         match self.mode.clone().into() {
             HandlerMode::DevInput => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
             HandlerMode::Terminal => self.mode.lock().unwrap().store(0, Ordering::SeqCst),
         }
+    }
+    pub fn get_buffer(&self) -> Vec<Event> {
+        return self.event_stream.lock().unwrap().clone()
     }
     pub fn poll(&self) -> Option<Event> {
         if self.event_stream.lock().unwrap().len() == 0 {
@@ -110,14 +143,27 @@ impl EventHandler {
         }
         return Some(self.event_stream.lock().unwrap().pop().unwrap())
     }
-    pub fn has_event(&self) -> bool {
-        return self.event_stream.lock().unwrap().len() != 0
+    pub fn has_event(&self) -> Result<bool, ThreadError> {
+        return Ok(self.event_stream.lock()?.len() != 0)
     }
     pub fn set_fd(&self, fd: i32) {
-        self.file_descriptor.lock().unwrap().store(fd as i8, Ordering::SeqCst)
+        self.file_descriptor.lock().unwrap().store(fd, Ordering::SeqCst)
+    }
+    pub fn start(&mut self) -> Result<(), ThreadError> {
+        self.thread_running_state.lock()?.store(true, Ordering::SeqCst);
+        self.thread_terminal = Self::spawn_thread(
+            self.event_stream.clone(),
+            self.mode.clone(),
+            self.file_descriptor.clone(),
+            self.thread_running_state.clone()
+        );
+        Ok(())
     }
     pub fn stop(&mut self) {
-        todo!()
+        self.thread_running_state.lock().unwrap().store(false, Ordering::SeqCst)
+    }
+    fn clear(&self) {
+        self.event_stream.lock().unwrap().clear();
     }
 }
 

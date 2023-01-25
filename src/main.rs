@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use std::time::SystemTime;
 use nix::fcntl::{open, OFlag};
+use crate::app::DebugKey;
 
 mod counter;
 mod app;
@@ -26,14 +27,14 @@ fn main() {
         OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
     ) {
         Ok(f) => f,
-        Err(e) => { app.debug_info.borrow_mut().push(e.to_string()); 0}
+        Err(e) => { app.debug_info.borrow_mut().insert(DebugKey::Warning(e.to_string()), "".to_string()); 0}
     };
     app = app.set_super_user(fd);
 
     app = app.start().unwrap();
     let store = app.end().unwrap();
-    println!("Debug Info:\n{}", 
-        app.debug_info.borrow().iter().map(|debug_line| debug_line.to_string() + "\n")
+    println!("Debug Info:\n{}",
+        app.debug_info.borrow().iter().map(|debug_line| debug_line.1.to_string() + "\n")
         .collect::<String>()
     );
     store.to_json(SAVE_FILE);

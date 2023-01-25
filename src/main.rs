@@ -33,10 +33,6 @@ fn main() {
 
     app = app.start().unwrap();
     let store = app.end().unwrap();
-    println!("Debug Info:\n{}",
-        app.debug_info.borrow().iter().map(|debug_line| debug_line.1.to_string() + "\n")
-        .collect::<String>()
-    );
     store.to_json(SAVE_FILE);
 }
 

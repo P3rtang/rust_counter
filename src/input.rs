@@ -1,20 +1,20 @@
-use crossterm::event::{KeyCode, KeyModifiers, DisableMouseCapture};
+use crossterm::event::{DisableMouseCapture, KeyCode, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen, enable_raw_mode};
-use nix::unistd::read;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
 use nix::poll::{poll, PollFd, PollFlags};
-use tui::Terminal;
-use tui::backend::CrosstermBackend;
+use nix::unistd::read;
 use std::fmt::Display;
 use std::io;
 use std::process::exit;
-use std::sync::atomic::{AtomicU8, Ordering, AtomicI32, AtomicBool};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
+use tui::backend::CrosstermBackend;
+use tui::Terminal;
 
 const REPEAT_DELAY: Duration = Duration::from_millis(500);
-const REPEAT_RATE : Duration = Duration::from_millis(50);
+const REPEAT_RATE: Duration = Duration::from_millis(50);
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
 
@@ -60,16 +60,16 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
         match value.lock().unwrap().load(Ordering::SeqCst) {
             0 => HandlerMode::DevInput,
             1 => HandlerMode::Terminal,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
 
 pub struct EventHandler {
-    mode:                 HandlerModeThread,
-    file_descriptor:      FileDescriptorThread,
-    event_stream:         EventStream,
-    thread_terminal:      JoinHandle<()>,
+    mode: HandlerModeThread,
+    file_descriptor: FileDescriptorThread,
+    event_stream: EventStream,
+    thread_terminal: JoinHandle<()>,
     thread_running_state: ThreadRunning,
 }
 
@@ -79,8 +79,13 @@ impl EventHandler {
         let file_descriptor = Arc::new(Mutex::new(AtomicI32::new(fd)));
         let event_stream: EventStream = Arc::new(Mutex::new(vec![]));
         let thread_running_state = Arc::new(Mutex::new(AtomicBool::new(false)));
-        let thread_terminal = EventHandler::spawn_thread(event_stream.clone(), mode.clone(), file_descriptor.clone(), thread_running_state.clone());
-        Self { 
+        let thread_terminal = EventHandler::spawn_thread(
+            event_stream.clone(),
+            mode.clone(),
+            file_descriptor.clone(),
+            thread_running_state.clone(),
+        );
+        Self {
             mode,
             file_descriptor,
             event_stream,
@@ -100,17 +105,18 @@ impl EventHandler {
                     HandlerMode::Terminal => {
                         match crossterm::event::read().unwrap() {
                             crossterm::event::Event::Key(key) => {
-                                let event = Event { 
+                                let event = Event {
                                     type_: EventType::KeyEvent(key.clone().into()),
                                     modifiers: key.modifiers,
                                     time: Instant::now(),
                                     mode: HandlerMode::Terminal,
                                 };
-                                if key.code == KeyCode::Char('c') && event.modifiers.intersects(KeyModifiers::CONTROL) {
+                                if key.code == KeyCode::Char('c')
+                                    && event.modifiers.intersects(KeyModifiers::CONTROL)
+                                {
                                     end().unwrap();
                                     exit(2)
                                 }
-                                // TODO: when ctrl+c is pressed close the program no matter what
                                 event_stream.lock().unwrap().insert(0, event);
                             }
                             // TODO: integrate mouse events
@@ -119,7 +125,10 @@ impl EventHandler {
                         }
                     }
                     HandlerMode::DevInput => {
-                        if let Some(event) = DevInputEvent::poll(-1, fd.lock().unwrap().load(Ordering::SeqCst) as i32) {
+                        if let Some(event) = DevInputEvent::poll(
+                            -1,
+                            fd.lock().unwrap().load(Ordering::SeqCst) as i32,
+                        ) {
                             event_stream.lock().unwrap().insert(0, event.into())
                         }
                         // TODO: use crossterm mouse events in this context
@@ -129,7 +138,9 @@ impl EventHandler {
         })
     }
     pub fn toggle_mode(&mut self) {
-        if self.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 { return }
+        if self.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 {
+            return;
+        }
         self.clear();
         match self.mode.clone().into() {
             HandlerMode::DevInput => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
@@ -137,35 +148,44 @@ impl EventHandler {
         }
     }
     pub fn get_buffer(&self) -> Vec<Event> {
-        return self.event_stream.lock().unwrap().clone()
+        return self.event_stream.lock().unwrap().clone();
     }
     pub fn poll(&self) -> Option<Event> {
         if self.event_stream.lock().unwrap().len() == 0 {
             panic!()
-        } else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into() {
+        } else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
+        {
             let _ = self.event_stream.lock().unwrap().pop();
-            return None
+            return None;
         }
-        return Some(self.event_stream.lock().unwrap().pop().unwrap())
+        return Some(self.event_stream.lock().unwrap().pop().unwrap());
     }
     pub fn has_event(&self) -> Result<bool, ThreadError> {
-        return Ok(self.event_stream.lock()?.len() != 0)
+        return Ok(self.event_stream.lock()?.len() != 0);
     }
     pub fn set_fd(&self, fd: i32) {
-        self.file_descriptor.lock().unwrap().store(fd, Ordering::SeqCst)
+        self.file_descriptor
+            .lock()
+            .unwrap()
+            .store(fd, Ordering::SeqCst)
     }
     pub fn start(&mut self) -> Result<(), ThreadError> {
-        self.thread_running_state.lock()?.store(true, Ordering::SeqCst);
+        self.thread_running_state
+            .lock()?
+            .store(true, Ordering::SeqCst);
         self.thread_terminal = Self::spawn_thread(
             self.event_stream.clone(),
             self.mode.clone(),
             self.file_descriptor.clone(),
-            self.thread_running_state.clone()
+            self.thread_running_state.clone(),
         );
         Ok(())
     }
     pub fn stop(&mut self) {
-        self.thread_running_state.lock().unwrap().store(false, Ordering::SeqCst)
+        self.thread_running_state
+            .lock()
+            .unwrap()
+            .store(false, Ordering::SeqCst)
     }
     fn clear(&self) {
         self.event_stream.lock().unwrap().clear();
@@ -207,7 +227,7 @@ impl From<DevInputEvent> for Event {
             type_: EventType::KeyEvent(value.code.into()),
             modifiers: KeyModifiers::NONE,
             time: Instant::now(),
-            mode: HandlerMode::DevInput
+            mode: HandlerMode::DevInput,
         }
     }
 }
@@ -238,11 +258,14 @@ impl DevInputEvent {
                     let _bytes_read = read(fd, &mut buf).unwrap();
                     let event: DevInputEvent = unsafe { std::mem::transmute(buf) };
                     if event.type_ == EV_KEY && event.value == 0 {
-                        return Some(event)
-                    } else { return None }
+                        return Some(event);
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
                 }
-                else { return None }
-            },
+            }
             Err(_e) => return None,
         }
     }
@@ -325,14 +348,14 @@ impl From<crossterm::event::KeyEvent> for Key {
 impl From<u16> for Key {
     fn from(value: u16) -> Self {
         match value {
-            1  => Key::Esc,
+            1 => Key::Esc,
             13 => Key::Char('='),
             16 => Key::Char('q'),
             28 => Key::Enter,
             74 => Key::Char('-'),
             78 => Key::Char('+'),
             96 => Key::Enter,
-            _  => Key::Null,
+            _ => Key::Null,
             // TODO: add more keys
         }
     }

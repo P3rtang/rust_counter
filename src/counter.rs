@@ -52,7 +52,6 @@ impl Counter {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-
     /// Sets the time of this `Counter`.
     /// time in minutes
     pub fn set_time(&mut self, time: Duration) {
@@ -85,7 +84,7 @@ impl Counter {
     }
     
     pub fn new_phase(&mut self) {
-        self.phases.insert(0, Phase::new(&format!("Phase {}", self.phases.len() + 1), 0, Duration::default()))
+        self.phases.insert(0, Phase::new(format!("Phase {}", self.phases.len() + 1), 0, Duration::default()))
     }
     pub fn get_phase(&self, idx: usize) -> Option<&Phase> {
         self.phases.get(idx)
@@ -116,7 +115,7 @@ impl fmt::Display for Counter {
     } 
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CounterStore {
     /// An object to hold multiple counters in like a vec but specific for Counter
     ///
@@ -242,7 +241,7 @@ impl Progress {
                 }
             }
         }
-        return self.progress
+        self.progress
     }
 }
 

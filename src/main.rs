@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use std::time::SystemTime;
 use nix::fcntl::{open, OFlag};
+use crate::app::DebugKey;
 
 mod counter;
 mod app;
@@ -21,18 +22,17 @@ fn main() {
 
     let mut app = app::App::new(1000 / FRAME_RATE, store);
 
-    let fd = match open("/dev/input/event19", OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()) {
+    let fd = match open(
+        "/dev/input/event5",
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
+    ) {
         Ok(f) => f,
-        Err(e) => { app.debug_info.push(e.to_string()); 0}
+        Err(e) => { app.debug_info.borrow_mut().insert(DebugKey::Warning(e.to_string()), "".to_string()); 0}
     };
     app = app.set_super_user(fd);
 
     app = app.start().unwrap();
     let store = app.end().unwrap();
-    println!("Debug Info:\n{}", 
-        app.debug_info.iter().map(|debug_line| debug_line.to_string() + "\n")
-        .collect::<String>()
-    );
     store.to_json(SAVE_FILE);
 }
 

@@ -50,10 +50,24 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
         }
     };
 
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(f.size());
+    let chunks = if app.get_mode().intersects(AppMode::DEBUGGING) &&
+                    app.ui_size == UiWidth::Big
+    {
+        let debug_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints( [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref() )
+            .split(f.size());
+        draw_debug_window(f, app, debug_chunks[1])?;
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(debug_chunks[0])
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(f.size())
+    };
 
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -63,43 +77,42 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
             ].as_ref()
         )
         .split(chunks[chunks.len() - 1]);
-
-
+    
     draw_counter_list(f, app, chunks[0]);
-    draw_phase_list(f, app, &chunks);
     draw_text_boxes(f, app, &right_chunks)?;
     draw_progress_gauge(f, app, &right_chunks)?;
+    draw_phase_list(f, app, &chunks);
 
     // if any the app is in an entry state draw them last so they go on top
-    match app.get_mode() {
-        AppMode::Selection(DS::AddNew) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Name new Counter", (50, 10))
+    match app.get_dialog_state() {
+        DS::AddNew => {
+            draw_entry(f, app.get_entry_state(0), "Name new Counter", (50, 10))
         }
-        AppMode::PhaseSelect(DS::Editing(_)) => {
+        DS::Editing(_) if app.get_mode() == AppMode::PHASE_SELECT => {
             let phase_title = format!(
                 "give phase {}\n a name",
                 app.get_act_phase_name()?
             );
-            draw_entry(f, &mut app.get_entry_state(0), &phase_title, (50, 10));
+            draw_entry(f, app.get_entry_state(0), phase_title, (50, 10));
         }
-        AppMode::Selection(DS::Editing(ES::Rename(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Name", (50, 10)) 
+        DS::Editing(ES::Rename) => {
+            draw_entry(f, app.get_entry_state(0), "Change Name", (50, 10)) 
         }
-        AppMode::Selection(DS::Editing(ES::ChCount(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Count", (50, 10))
+        DS::Editing(ES::ChCount) => {
+            draw_entry(f, app.get_entry_state(0), "Change Count", (50, 10))
         }
-        AppMode::Selection(DS::Editing(ES::ChTime(_))) => {
-            draw_entry(f, &mut app.get_entry_state(0), "Change Time", (50, 10));
+        DS::Editing(ES::ChTime) => {
+            draw_entry(f, app.get_entry_state(0), "Change Time", (50, 10));
         }
-        AppMode::Selection(DS::Delete) => {
-            let name = app.get_act_counter()?.get_name();
-            draw_delete_dialog(f, &name)
-        }
-        AppMode::PhaseSelect(DS::Delete) =>  {
+        DS::Delete if app.get_mode() == AppMode::PHASE_SELECT =>  {
             if app.get_act_counter()?.get_phase_count() > 1 {
                 let name = app.get_act_phase_name()?;
-                draw_delete_dialog(f, &name)
+                draw_delete_dialog(f, name)
             }
+        }
+        DS::Delete => {
+            let name = app.get_act_counter()?.get_name();
+            draw_delete_dialog(f, name)
         }
         _ => {}
     }
@@ -166,7 +179,7 @@ fn draw_delete_dialog
     let block = Block::default()
         .borders(Borders::ALL);
     let dialog = Dialog::default()
-        .message(&format!("Are you sure\nyou want to delete {}?", name))
+        .message(format!("Are you sure\nyou want to delete {name}?"))
         .style(Style::default().fg(Color::Red).bg(GRAY))
         .keys(KeyCode::Esc, KeyCode::Enter)
         .block(block);
@@ -184,14 +197,11 @@ fn create_list<'a>(list: Vec<ListItem<'a>>, block: Block<'a>) -> List<'a> {
 fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: Rect) {
     // if the app uisize is small hide the main counter list when phases are displayed
     // if the list is displayed it should be blue when it is the active widget
-    use AppMode::*;
 
-    let (color, title) = match app.get_mode() {
-        PhaseSelect(_) | Counting(1) 
-            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
-        PhaseSelect(_) | Counting(_) => (Color::White, ""),
-        _ => (BLUE, "Counters"),
-    };
+    let (color, title) = if app.get_mode().intersects(AppMode::PHASE_SELECT | AppMode::COUNTING) {
+        if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact { return }
+        else { (Color::White, "") }
+    } else { (BLUE, "Counters") };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -209,22 +219,20 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 }
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
-    use AppMode::*;
-    
-    let (color, title) = match app.get_mode() {
-        Selection(_) | Counting(0) 
-            if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact => return,
-        Selection(_) | Counting(_) => (Color::White, ""),
-        _ => (BLUE, "Phases")
-    };
+    let (color, title) = if !app.get_mode().intersects(AppMode::PHASE_SELECT) ||
+        app.get_mode().intersects(AppMode::COUNTING)
+    {
+        if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact { return }
+        else { (Color::White, "") }
+    } else { (BLUE, "Select Phase") };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title)
         .style(Style::default().fg(color));
 
-    let mut rect_ind = 1;
-    if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small { rect_ind = 0 }
+    let rect_ind = if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small { 0 }
+                   else { 1 };
 
     let list_widget = if let Ok(counter) = app.get_act_counter() {
         create_list(
@@ -245,27 +253,20 @@ fn draw_text_boxes
     (f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect])
     -> Result<(), AppError> 
 {
-    use AppMode::*;
-    let (color, title) = match app.get_mode() {
-        Counting(_) => (BLUE, format!(
-            "{} - {}",
-            app.get_act_counter()?.get_name(),
-            app.get_act_phase_name()?
-        )),
-        _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
-        _ => (Color::White, "".to_string())
+    let (color, title) = if !app.get_mode().intersects(AppMode::COUNTING) {
+        if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small { return Ok(()) }
+        else { (Color::White, "".to_string()) }
+    } else {
+        if app.get_mode().intersects(AppMode::KEYLOGGING) { (ORANGE, "Keylogger Active".to_string()) }
+        else { (BLUE, format!("{}-{}", app.get_act_counter()?.get_name(), app.get_act_phase_name()?)) }
     };
 
-    let (active_count, active_time) = match app.get_mode() {
-        PhaseSelect(_) | Counting(1) => (
-            app.get_act_phase_count()?,
-            app.get_act_phase_time()?,
-        ),
-        _ => (
-            app.get_act_counter().map_or(0,                   |c| c.get_count()),
-            app.get_act_counter().map_or(Duration::default(), |c| c.get_time()),
-        )
-    };
+    let (active_count, active_time) = if app.get_mode().intersects(AppMode::PHASE_SELECT) {
+        (app.get_act_phase_count()?, app.get_act_phase_time()?)
+    } else {(
+        app.get_act_counter().map_or(0,                   |c| c.get_count()),
+        app.get_act_counter().map_or(Duration::default(), |c| c.get_time()),
+    )};
 
     let paragraph_block = Block::default()
         .borders(Borders::ALL)
@@ -297,13 +298,9 @@ fn draw_progress_gauge
     (f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect])
     -> Result<(), AppError> 
 {
-    use AppMode::*;
-
     let progress = app.get_act_counter().map_or(0.0, |c| c.get_progress());
-    match app.get_mode() {
-        Counting(_) if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => {}
-        _ if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small => return Ok(()),
-        _ => {}
+    if !app.get_mode().intersects(AppMode::COUNTING) {
+        if app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Small { return Ok(()) }
     }
     
     let mut color = GREEN;
@@ -324,5 +321,23 @@ fn draw_progress_gauge
         .ratio(progress)
         .label(format!("{:.3}", progress * 100.0));
     f.render_widget(progress_bar, chunk[1]);
+    Ok(())
+}
+
+fn draw_debug_window(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: Rect)
+    -> Result<(), AppError>
+{
+    let debug_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(BRIGHT_RED))
+        .title("DEBUG_INFO");
+    let mut debug_message = String::new();
+
+    for (key, value) in app.debug_info.borrow().iter() {
+        debug_message.push_str(format!("{}: {:?}\n", key.to_string(), value).as_str())
+    }
+
+    let debug_window = Paragraph::new(debug_message).block(debug_block);
+    f.render_widget(debug_window, area);
     Ok(())
 }

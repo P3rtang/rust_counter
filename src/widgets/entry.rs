@@ -151,7 +151,7 @@ impl<'a> StatefulWidget for Entry<'a> {
         for i in 0..widget_area.height {
             buf.set_spans(
                 widget_area.x,
-                widget_area.y + i as u16,
+                widget_area.y + i,
                 &widget_empty.lines[0],
                 widget_area.width,
             );

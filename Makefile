@@ -2,8 +2,8 @@ default:
 	cargo build
 
 install:
-	cargo build --release --bin tui-counter
-	sudo install target/release/tui-counter /usr/local/bin
+	cargo build --release --bin counter-tui
+	sudo install target/release/counter-tui /usr/local/bin
 
 uninstall:
 	sudo rm /usr/local/bin/tui-counter

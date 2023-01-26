@@ -8,6 +8,7 @@ mod app;
 mod ui;
 mod widgets;
 mod input;
+mod settings;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist

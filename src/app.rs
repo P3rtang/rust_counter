@@ -1,4 +1,6 @@
 use crate::widgets::entry::EntryState;
+use core::sync::atomic::AtomicI32;
+use std::sync::{PoisonError, MutexGuard};
 use crate::ui::{self, UiWidth};
 use crate::SAVE_FILE;
 use crate::counter::{Counter, CounterStore};
@@ -7,6 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use nix::errno::Errno;
 use std::cell::{Ref, RefMut, RefCell};
 use std::collections::HashMap;
 use std::io;
@@ -14,7 +17,7 @@ use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
-use crate::input::{Key, EventHandler, EventType, ThreadError};
+use crate::input::{Key, EventHandler, EventType, ThreadError, DevInputFileDescriptor};
 use bitflags::bitflags;
 use std::thread;
 
@@ -23,6 +26,7 @@ use std::thread;
 pub enum AppError {
     GetCounterError,
     GetPhaseError,
+    DevIoError,
     IoError,
     ThreadError(ThreadError),
     ImpossibleState,
@@ -37,6 +41,18 @@ impl From<io::Error> for AppError {
 impl From<ThreadError> for AppError {
     fn from(value: ThreadError) -> Self {
         Self::ThreadError(value)
+    }
+}
+
+impl From<Errno> for AppError {
+    fn from(_: Errno) -> Self {
+        Self::DevIoError
+    }
+}
+
+impl From<PoisonError<MutexGuard<'_, AtomicI32>>> for AppError {
+    fn from(_: PoisonError<MutexGuard<'_, AtomicI32>>) -> Self {
+        Self::DevIoError
     }
 }
 
@@ -155,9 +171,17 @@ impl App {
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
 
+        self.debug_info.borrow_mut().insert(
+            DebugKey::Debug("dev_input_files".to_string()), 
+            DevInputFileDescriptor::get_kbd_inputs().into_iter().map(|(_key, value)| value + ", ").collect::<String>()
+        );
+
         while self.running {
             while self.event_handler.has_event()? {
-                self.debug_info.borrow_mut().insert(DebugKey::Debug("Last Key".to_string()), format!("{:?}", self.event_handler.get_buffer()[0]));
+                self.debug_info.borrow_mut().insert(
+                    DebugKey::Debug("Last Key".to_string()),
+                    format!("{:?}", self.event_handler.get_buffer()[0])
+                );
                 self.handle_event()?;
             }
 
@@ -172,7 +196,10 @@ impl App {
             let terminal_start_time = Instant::now();
             // draw all ui elements
             terminal.draw(|f| { ui::draw(f, &mut self).unwrap() })?;
-            self.debug_info.borrow_mut().insert(DebugKey::Debug("draw time".to_string()), format!("{:?}", Instant::now() - terminal_start_time));
+            self.debug_info.borrow_mut().insert(
+                DebugKey::Debug("draw time".to_string()),
+                format!("{:?}", Instant::now() - terminal_start_time)
+            );
 
             // if a widget alters the cursor position it will report to App
             // we set the terminal cursor position itself here
@@ -181,7 +208,10 @@ impl App {
             }
 
             thread::sleep(self.tick_rate - (Instant::now() - now_time));
-            self.debug_info.borrow_mut().insert(DebugKey::Debug("key event".to_string()), format!("{:?}", self.event_handler.get_buffer()));
+            self.debug_info.borrow_mut().insert(
+                DebugKey::Debug("key event".to_string()),
+                format!("{:?}", self.event_handler.get_buffer())
+            );
         }
         Ok(self)
     }

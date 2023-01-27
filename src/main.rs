@@ -9,6 +9,7 @@ mod ui;
 mod widgets;
 mod input;
 mod settings;
+mod tests;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
@@ -44,33 +45,4 @@ fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {
     let duration = end.duration_since(start).unwrap();
     println!("took {} microseconds", duration.as_micros());
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_counterstore() {
-        let mut store = counter::CounterStore::default();
-        let names = ["foo", "baz", "bar"];
-        for name in names {
-            store.push(counter::Counter::new(name))
-        }
-        // test counterstore len attribute
-        assert_eq!(store.len(), names.len());
-        assert_eq!(store[2].borrow().get_name(), "bar");
-        for (index, counter) in store.enumerate() {
-            assert_eq!(counter.borrow().get_name(), names[index]);
-        }
-    }
-    #[test]
-    fn test_counter() {
-        let mut test = counter::Counter::new("test");
-        assert_eq!(test.get_count(), 1);
-        test.set_count(5);
-        assert_eq!(test.get_count(), 5);
-        test.increase_by(7);
-        assert_eq!(test.get_count(), 12);
-    }
 }

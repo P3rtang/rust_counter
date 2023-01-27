@@ -1,8 +1,9 @@
 use crate::counter::{Counter, CounterStore};
 use crate::input::{DevInputFileDescriptor, EventHandler, EventType, Key, ThreadError};
+use crate::settings::{KeyMap, Settings};
 use crate::ui::{self, UiWidth};
 use crate::widgets::entry::EntryState;
-use crate::SAVE_FILE;
+use crate::{settings, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
 use crossterm::event::KeyModifiers;
@@ -129,10 +130,11 @@ pub struct App {
     tick_rate: Duration,
     last_interaction: Instant,
     running: bool,
-    pub time_show_millis: bool,
     cursor_pos: Option<(u16, u16)>,
     pub event_handler: EventHandler,
     pub debug_info: RefCell<HashMap<DebugKey, String>>,
+    pub settings: Settings,
+    pub key_map: KeyMap,
 }
 
 impl App {
@@ -144,10 +146,11 @@ impl App {
             c_store: counter_store,
             ui_size: UiWidth::Big,
             running: true,
-            time_show_millis: true,
             cursor_pos: None,
             event_handler: EventHandler::new(0),
             debug_info: RefCell::new(HashMap::new()),
+            settings: Settings::default(),
+            key_map: KeyMap::default(),
         }
     }
     pub fn set_super_user(self, input_fd: i32) -> Self {
@@ -183,7 +186,11 @@ impl App {
                     DebugKey::Debug("Last Key".to_string()),
                     format!("{:?}", self.event_handler.get_buffer()[0]),
                 );
-                self.handle_event()?;
+                if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
+                    self.settings.handle_event(&self)?;
+                } else {
+                    self.handle_event()?;
+                }
             }
 
             // timing the execution time of the loop and add it to the counter time
@@ -202,6 +209,17 @@ impl App {
                 // TODO: factor out these unwraps make them fatal errors but clean up screen first
                 ui::draw(f, &mut self).unwrap();
                 // if settings are open draw on top
+                if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
+                    match settings::draw_as_overlay(f, &self.settings) {
+                        Ok(_) => {}
+                        Err(AppError::ScreenSize(msg)) => {
+                            self.debug_info
+                                .borrow_mut()
+                                .insert(DebugKey::Warning("SettingsDraw".to_string()), msg);
+                        }
+                        Err(_) => panic!(),
+                    }
+                }
             })?;
 
             self.debug_info.borrow_mut().insert(
@@ -336,6 +354,21 @@ impl App {
         return &self.state.dialog;
     }
 
+    fn close_dialog(&mut self) {
+        self.state.dialog = DialogState::None;
+        self.state
+            .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
+    }
+
+    fn open_dialog(&mut self, dialog: DialogState) {
+        self.toggle_mode(AppMode::DIALOG_OPEN);
+        self.state.dialog = dialog
+    }
+
+    pub fn get_dialog_state(&self) -> DialogState {
+        return self.state.dialog.clone();
+    }
+
     pub fn get_list_state(&self, index: usize) -> &ListState {
         return self.state.list_states.get(index).unwrap();
     }
@@ -354,6 +387,10 @@ impl App {
 
     pub fn get_entry_state(&mut self) -> &mut EntryState {
         return &mut self.state.entry_state;
+    }
+
+    pub fn reset_entry_state(&mut self, index: usize) {
+        self.state.entry_states[index] = EntryState::default();
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
@@ -456,15 +493,15 @@ impl App {
 
     fn counter_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char('+') | Key::Char('=') => {
+            key if self.key_map.key_increase_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(1);
                 self.c_store.to_json(SAVE_FILE)
             }
-            Key::Char('-') => {
+            key if self.key_map.key_decrease_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(-1);
                 self.c_store.to_json(SAVE_FILE)
             }
-            Key::Char('*') => {
+            key if self.key_map.key_toggle_keylogger.contains(&key) => {
                 self.event_handler.toggle_mode();
                 self.toggle_mode(AppMode::KEYLOGGING)
             }
@@ -649,10 +686,11 @@ impl Default for App {
             tick_rate: Duration::from_millis(40),
             last_interaction: Instant::now(),
             running: true,
-            time_show_millis: true,
             cursor_pos: None,
             event_handler: EventHandler::new(0),
             debug_info: RefCell::new(HashMap::default()),
+            settings: Settings::default(),
+            key_map: KeyMap::default(),
         }
     }
 }

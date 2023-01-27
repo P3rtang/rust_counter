@@ -281,7 +281,7 @@ fn draw_text_boxes
         .alignment(Alignment::Center);
 
     let paragraph_time = Paragraph::new(
-            format_paragraph(format_duration(active_time, app.time_show_millis))
+            format_paragraph(format_duration(active_time, app.settings.time_show_millis))
         )
         .block(time_block)
         .alignment(Alignment::Center);

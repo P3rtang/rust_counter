@@ -1,12 +1,6 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 use crate::widgets::entry::EntryState;
 use crate::ui::{self, UiWidth};
 use crate::SAVE_FILE;
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 use crate::counter::{Counter, CounterStore};
 use crate::input::{DevInputFileDescriptor, EventHandler, EventType, Key, ThreadError};
 use crate::settings::{KeyMap, Settings};
@@ -21,17 +15,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-use std::cell::{Ref, RefMut, RefCell};
-=======
 use nix::errno::Errno;
 use std::cell::{Ref, RefCell, RefMut};
->>>>>>> Stashed changes
-=======
-use nix::errno::Errno;
-use std::cell::{Ref, RefCell, RefMut};
->>>>>>> Stashed changes
 use std::collections::HashMap;
 use std::io;
 use std::sync::{MutexGuard, PoisonError};
@@ -40,15 +25,9 @@ use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 use crate::input::{Key, EventHandler, EventType, ThreadError};
 use bitflags::bitflags;
 use std::thread;
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
@@ -211,6 +190,9 @@ impl App {
                     self.handle_event()?;
                 }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -230,9 +212,12 @@ impl App {
             // draw all ui elements
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             terminal.draw(|f| { ui::draw(f, &mut self).unwrap() })?;
             self.debug_info.borrow_mut().insert(DebugKey::Debug("draw time".to_string()), format!("{:?}", Instant::now() - terminal_start_time));
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
             terminal.draw(|f| {

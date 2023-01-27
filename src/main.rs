@@ -1,21 +1,21 @@
 #![allow(dead_code)]
-use std::time::SystemTime;
-use nix::fcntl::{open, OFlag};
 use crate::app::DebugKey;
+use nix::fcntl::{open, OFlag};
+use std::time::SystemTime;
 
-mod counter;
 mod app;
-mod ui;
-mod widgets;
+mod counter;
 mod input;
 mod tests;
+mod ui;
+mod widgets;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
-const SAVE_FILE:     &str = "data.json";
-const TIME_OUT:      u64  = 180;
-const TICK_SLOWDOWN: u64  = 60;
-const FRAME_RATE:    u64  = 25;
+const SAVE_FILE: &str = "data.json";
+const TIME_OUT: u64 = 180;
+const TICK_SLOWDOWN: u64 = 60;
+const FRAME_RATE: u64 = 25;
 
 fn main() {
     let store = counter::CounterStore::from_json(SAVE_FILE)
@@ -25,10 +25,16 @@ fn main() {
 
     let fd = match open(
         "/dev/input/event5",
-        OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+        nix::sys::stat::Mode::empty(),
     ) {
         Ok(f) => f,
-        Err(e) => { app.debug_info.borrow_mut().insert(DebugKey::Warning(e.to_string()), "".to_string()); 0}
+        Err(e) => {
+            app.debug_info
+                .borrow_mut()
+                .insert(DebugKey::Warning(e.to_string()), "".to_string());
+            0
+        }
     };
     app = app.set_super_user(fd);
 

@@ -1,7 +1,10 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 use crate::widgets::entry::EntryState;
 use crate::ui::{self, UiWidth};
 use crate::SAVE_FILE;
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 use crate::counter::{Counter, CounterStore};
@@ -19,7 +22,12 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 use std::cell::{Ref, RefMut, RefCell};
+=======
+use nix::errno::Errno;
+use std::cell::{Ref, RefCell, RefMut};
+>>>>>>> Stashed changes
 =======
 use nix::errno::Errno;
 use std::cell::{Ref, RefCell, RefMut};
@@ -33,9 +41,12 @@ use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 use crate::input::{Key, EventHandler, EventType, ThreadError};
 use bitflags::bitflags;
 use std::thread;
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
@@ -199,6 +210,9 @@ impl App {
                 } else {
                     self.handle_event()?;
                 }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             }
 
@@ -215,9 +229,12 @@ impl App {
 
             // draw all ui elements
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
             terminal.draw(|f| { ui::draw(f, &mut self).unwrap() })?;
             self.debug_info.borrow_mut().insert(DebugKey::Debug("draw time".to_string()), format!("{:?}", Instant::now() - terminal_start_time));
 =======
+=======
+>>>>>>> Stashed changes
             terminal.draw(|f| {
                 // TODO: factor out these unwraps make them fatal errors but clean up screen first
                 ui::draw(f, &mut self).unwrap();

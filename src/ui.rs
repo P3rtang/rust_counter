@@ -84,7 +84,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
     draw_phase_list(f, app, &chunks);
 
     // if any the app is in an entry state draw them last so they go on top
-    match app.get_dialog_state() {
+    match app.get_opened_dialog() {
         DS::AddNew => {
             draw_entry(f, app.get_entry_state(0), "Name new Counter", (50, 10))
         }

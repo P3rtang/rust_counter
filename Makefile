@@ -7,3 +7,6 @@ install:
 
 uninstall:
 	sudo rm /usr/local/bin/tui-counter
+
+tests:
+	cargo test

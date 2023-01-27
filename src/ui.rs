@@ -88,7 +88,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
         DS::AddNew => {
             draw_entry(f, app.get_entry_state(0), "Name new Counter", (50, 10))
         }
-        DS::Editing(_) if app.get_mode() == AppMode::PHASE_SELECT => {
+        DS::Editing(_) if app.get_mode().intersects(AppMode::PHASE_SELECT) => {
             let phase_title = format!(
                 "give phase {}\n a name",
                 app.get_act_phase_name()?
@@ -104,7 +104,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
         DS::Editing(ES::ChTime) => {
             draw_entry(f, app.get_entry_state(0), "Change Time", (50, 10));
         }
-        DS::Delete if app.get_mode() == AppMode::PHASE_SELECT =>  {
+        DS::Delete if app.get_mode().intersects(AppMode::PHASE_SELECT) =>  {
             if app.get_act_counter()?.get_phase_count() > 1 {
                 let name = app.get_act_phase_name()?;
                 draw_delete_dialog(f, name)
@@ -281,7 +281,7 @@ fn draw_text_boxes
         .alignment(Alignment::Center);
 
     let paragraph_time = Paragraph::new(
-            format_paragraph(format_duration(active_time, app.time_show_millis))
+            format_paragraph(format_duration(active_time, app.settings.time_show_millis))
         )
         .block(time_block)
         .alignment(Alignment::Center);

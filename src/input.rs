@@ -192,6 +192,12 @@ impl EventHandler {
     }
 }
 
+impl Default for EventHandler {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl std::fmt::Display for EventHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "event: {:?}", self.event_stream.lock().unwrap())

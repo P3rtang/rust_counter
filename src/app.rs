@@ -1,6 +1,3 @@
-use crate::widgets::entry::EntryState;
-use crate::ui::{self, UiWidth};
-use crate::SAVE_FILE;
 use crate::counter::{Counter, CounterStore};
 use crate::input::{DevInputFileDescriptor, EventHandler, EventType, Key, ThreadError};
 use crate::settings::{KeyMap, Settings};
@@ -25,15 +22,13 @@ use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use DialogState as DS;
 use EditingState as ES;
-use crate::input::{Key, EventHandler, EventType, ThreadError};
-use bitflags::bitflags;
-use std::thread;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum AppError {
     GetCounterError,
     GetPhaseError,
+    DevIoError,
     IoError,
     ThreadError(ThreadError),
     ImpossibleState(String),
@@ -49,6 +44,18 @@ impl From<io::Error> for AppError {
 impl From<ThreadError> for AppError {
     fn from(value: ThreadError) -> Self {
         Self::ThreadError(value)
+    }
+}
+
+impl From<Errno> for AppError {
+    fn from(_: Errno) -> Self {
+        Self::DevIoError
+    }
+}
+
+impl From<PoisonError<MutexGuard<'_, AtomicI32>>> for AppError {
+    fn from(_: PoisonError<MutexGuard<'_, AtomicI32>>) -> Self {
+        Self::DevIoError
     }
 }
 
@@ -164,12 +171,6 @@ impl App {
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
 
-<<<<<<< Updated upstream
-        while self.running {
-            while self.event_handler.has_event()? {
-                self.debug_info.borrow_mut().insert(DebugKey::Debug("Last Key".to_string()), format!("{:?}", self.event_handler.get_buffer()[0]));
-                self.handle_event()?;
-=======
         self.debug_info.borrow_mut().insert(
             DebugKey::Debug("dev_input_files".to_string()),
             DevInputFileDescriptor::get_kbd_inputs()
@@ -189,13 +190,6 @@ impl App {
                 } else {
                     self.handle_event()?;
                 }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             }
 
             // timing the execution time of the loop and add it to the counter time
@@ -210,16 +204,6 @@ impl App {
             let terminal_start_time = Instant::now();
 
             // draw all ui elements
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            terminal.draw(|f| { ui::draw(f, &mut self).unwrap() })?;
-            self.debug_info.borrow_mut().insert(DebugKey::Debug("draw time".to_string()), format!("{:?}", Instant::now() - terminal_start_time));
-=======
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             terminal.draw(|f| {
                 // TODO: factor out these unwraps make them fatal errors but clean up screen first
                 ui::draw(f, &mut self).unwrap();
@@ -241,7 +225,6 @@ impl App {
                 DebugKey::Debug("draw time".to_string()),
                 format!("{:?}", Instant::now() - terminal_start_time),
             );
->>>>>>> Stashed changes
 
             // if a widget alters the cursor position it will report to App
             // we set the terminal cursor position itself here
@@ -250,14 +233,10 @@ impl App {
             }
 
             thread::sleep(self.tick_rate - (Instant::now() - now_time));
-<<<<<<< Updated upstream
-            self.debug_info.borrow_mut().insert(DebugKey::Debug("key event".to_string()), format!("{:?}", self.event_handler.get_buffer()));
-=======
             self.debug_info.borrow_mut().insert(
                 DebugKey::Debug("key event".to_string()),
                 format!("{:?}", self.event_handler.get_buffer()),
             );
->>>>>>> Stashed changes
         }
         Ok(self)
     }

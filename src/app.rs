@@ -19,7 +19,7 @@ use std::sync::{MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
-use DialogState as DS;
+use Dialog as DS;
 use EditingState as ES;
 
 #[allow(clippy::enum_variant_names)]
@@ -101,14 +101,14 @@ impl Default for AppMode {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub enum DialogState {
+pub enum Dialog {
     AddNew,
     Editing(EditingState),
     Delete,
     None,
 }
 
-impl Default for DialogState {
+impl Default for Dialog {
     fn default() -> Self {
         return Self::None;
     }
@@ -280,34 +280,48 @@ impl App {
         Ok(self.c_store.clone())
     }
 
+    /// Returns the [mode](App::state::mode) of [`App`].
     pub fn get_mode(&self) -> AppMode {
         self.state.mode.clone().into_inner()
     }
 
+    /// Sets the [mode](App::state::mode) of [`App`].
+    ///
+    /// WARNING this function overrides all other app modes
+    /// try using [`toggle_mode`] instead
     pub fn set_mode(&self, mode: AppMode) {
         self.state.set_mode(mode)
     }
 
+    /// Toggles the [mode](App::state::mode) of [`App`].
+    ///
+    /// This function preserves all other selected app modes
+    /// and only flips the passed appmode on or off
     pub fn toggle_mode(&self, mode: AppMode) {
         self.state.toggle_mode(mode)
     }
 
+    /// Sets the [mode](App::state::mode) of [`App`]
+    /// back to the default mode
+    /// this is [AppMode::SELECTION]
     pub fn reset_mode(&self) {
         self.state.set_mode(AppMode::SELECTION)
     }
 
-    fn close_dialog(&mut self) {
-        self.state.dialog = DialogState::None;
-        self.state
-            .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
-    }
-
-    fn open_dialog(&mut self, dialog: DialogState) {
+    /// Opens a `dialog`: [`DialogState`] 
+    /// Also set the `mode` of `App` to `AppMode::DIALOG_OPEN`
+    fn open_dialog(&mut self, dialog: Dialog) {
         self.toggle_mode(AppMode::DIALOG_OPEN);
         self.state.dialog = dialog
     }
 
-    pub fn get_dialog_state(&self) -> DialogState {
+    fn close_dialog(&mut self) {
+        self.state.dialog = Dialog::None;
+        self.state
+            .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
+    }
+
+    pub fn get_dialog_state(&self) -> Dialog {
         return self.state.dialog.clone();
     }
 
@@ -358,16 +372,16 @@ impl App {
         if self.get_mode().intersects(AppMode::DIALOG_OPEN) {
             if self.get_mode().intersects(AppMode::PHASE_SELECT) {
                 match self.state.dialog {
-                    DialogState::Delete => self.delete_phase_key_event(key)?,
-                    DialogState::Editing(ES::Rename) => self.rename_phase_key_event(key)?,
+                    Dialog::Delete => self.delete_phase_key_event(key)?,
+                    Dialog::Editing(ES::Rename) => self.rename_phase_key_event(key)?,
                     _ => return Err(AppError::ImpossibleState(format!("{:?}", self.get_mode()))),
                 }
             } else if self.get_mode().intersects(AppMode::SELECTION) {
                 match self.state.dialog {
-                    DialogState::AddNew => self.add_counter_key_event(key)?,
-                    DialogState::Delete => self.delete_counter_key_event(key)?,
-                    DialogState::Editing(_) => self.rename_key_event(key)?,
-                    DialogState::None => {
+                    Dialog::AddNew => self.add_counter_key_event(key)?,
+                    Dialog::Delete => self.delete_counter_key_event(key)?,
+                    Dialog::Editing(_) => self.rename_key_event(key)?,
+                    Dialog::None => {
                         return Err(AppError::ImpossibleState(format!("{:?}", self.get_mode())))
                     }
                 }
@@ -649,7 +663,7 @@ impl Default for App {
 #[derive(Default)]
 pub struct AppState<const T: usize, const U: usize> {
     mode: RefCell<AppMode>,
-    dialog: DialogState,
+    dialog: Dialog,
     list_states: Vec<ListState>,
     entry_states: Vec<EntryState>,
 }
@@ -658,7 +672,7 @@ impl<const T: usize, const U: usize> AppState<T, U> {
     fn new() -> Self {
         Self {
             mode: RefCell::new(AppMode::default()),
-            dialog: DialogState::None,
+            dialog: Dialog::None,
             list_states: vec![ListState::default(); T],
             entry_states: vec![EntryState::default(); U],
         }

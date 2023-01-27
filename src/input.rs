@@ -3,8 +3,10 @@ use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
+use nix::fcntl::{open, OFlag};
+use std::collections::HashMap;
 use std::fmt::Display;
-use std::io;
+use std::{io, fs};
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -13,6 +15,8 @@ use std::time::{Duration, Instant};
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
+use crate::app::AppError;
+
 const REPEAT_DELAY: Duration = Duration::from_millis(500);
 const REPEAT_RATE: Duration = Duration::from_millis(50);
 const EV_KEY: u16 = 0x01;
@@ -20,7 +24,6 @@ const EV_ABS: u16 = 0x03;
 
 type EventStream = Arc<Mutex<Vec<Event>>>;
 type HandlerModeThread = Arc<Mutex<AtomicU8>>;
-type FileDescriptorThread = Arc<Mutex<AtomicI32>>;
 type ThreadRunning = Arc<Mutex<AtomicBool>>;
 
 // TODO: this file should maybe be its own module or even github project
@@ -65,9 +68,46 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
     }
 }
 
+pub struct DevInputFileDescriptor {
+    file_descriptor: Arc<Mutex<AtomicI32>>,
+    active_file: (i32, i32)
+}
+
+impl DevInputFileDescriptor {
+    fn new(fd: i32) -> Self {
+        Self { 
+            file_descriptor: Arc::new(Mutex::new(AtomicI32::new(fd))),
+            active_file: (0, 0),
+        }
+    }
+    pub fn get_kbd_inputs() -> HashMap<i32, String> {
+        let mut map = HashMap::new();
+        let input_files = fs::read_dir("/dev/input/by-id").unwrap();
+        for file in input_files.into_iter().enumerate() {
+            let filtered_name = if let Ok(file_name) = file.1 {
+                let file_name_str = file_name.file_name().to_str().unwrap().to_string();
+
+                if !file_name_str.ends_with("event-kbd") { continue }
+                else if file_name_str.contains("if01") { continue } 
+                else { file_name_str }
+            } else { continue };
+            map.insert(file.0 as i32, filtered_name);
+        }
+        map
+    }
+    pub fn set_input(&mut self, id: i32) -> Result<(), AppError> {
+        let fd = open(
+            Self::get_kbd_inputs().get(&id).unwrap_or(&"".to_string()).as_str(),
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
+        )?;
+        self.file_descriptor.lock()?.store(fd, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
 pub struct EventHandler {
     mode: HandlerModeThread,
-    file_descriptor: FileDescriptorThread,
+    file_descriptor: DevInputFileDescriptor,
     event_stream: EventStream,
     thread_terminal: JoinHandle<()>,
     thread_running_state: ThreadRunning,
@@ -76,13 +116,13 @@ pub struct EventHandler {
 impl EventHandler {
     pub fn new(fd: i32) -> Self {
         let mode = Arc::new(Mutex::new(AtomicU8::new(HandlerMode::Terminal as u8)));
-        let file_descriptor = Arc::new(Mutex::new(AtomicI32::new(fd)));
+        let file_descriptor = DevInputFileDescriptor::new(fd);
         let event_stream: EventStream = Arc::new(Mutex::new(vec![]));
         let thread_running_state = Arc::new(Mutex::new(AtomicBool::new(false)));
         let thread_terminal = EventHandler::spawn_thread(
             event_stream.clone(),
             mode.clone(),
-            file_descriptor.clone(),
+            file_descriptor.file_descriptor.clone(),
             thread_running_state.clone(),
         );
         Self {
@@ -96,7 +136,7 @@ impl EventHandler {
     fn spawn_thread(
         event_stream: EventStream,
         mode: HandlerModeThread,
-        fd: FileDescriptorThread,
+        fd: Arc<Mutex<AtomicI32>>,
         thread_running_state: ThreadRunning,
     ) -> JoinHandle<()> {
         thread::spawn(move || {
@@ -138,7 +178,7 @@ impl EventHandler {
         })
     }
     pub fn toggle_mode(&mut self) {
-        if self.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 {
+        if self.file_descriptor.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 {
             return;
         }
         self.clear();
@@ -151,9 +191,8 @@ impl EventHandler {
         return self.event_stream.lock().unwrap().clone();
     }
     pub fn poll(&self) -> Option<Event> {
-        if self.event_stream.lock().unwrap().len() == 0 {
-            panic!()
-        } else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
+        if self.event_stream.lock().unwrap().len() == 0 { return None } 
+        else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
         {
             let _ = self.event_stream.lock().unwrap().pop();
             return None;
@@ -164,7 +203,7 @@ impl EventHandler {
         return Ok(self.event_stream.lock()?.len() != 0);
     }
     pub fn set_fd(&self, fd: i32) {
-        self.file_descriptor
+        self.file_descriptor.file_descriptor
             .lock()
             .unwrap()
             .store(fd, Ordering::SeqCst)
@@ -176,7 +215,7 @@ impl EventHandler {
         self.thread_terminal = Self::spawn_thread(
             self.event_stream.clone(),
             self.mode.clone(),
-            self.file_descriptor.clone(),
+            self.file_descriptor.file_descriptor.clone(),
             self.thread_running_state.clone(),
         );
         Ok(())

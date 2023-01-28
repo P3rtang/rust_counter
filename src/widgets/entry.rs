@@ -1,5 +1,4 @@
-use std::cell::{RefCell, Ref};
-
+use std::cell::RefCell;
 use crossterm::event::KeyCode;
 use tui::layout::Rect;
 use tui::text::Text;
@@ -17,21 +16,50 @@ pub struct EntryState {
 }
 
 impl EntryState {
+    pub fn new(size: usize) -> Self {
+        Self { fields: vec![String::new(); size], active_field: 0, cursor_pos: None.into() }
+    }
 
     pub fn push(&mut self, charr: char) {
         self.fields[self.active_field].push(charr);
     }
 
-    pub fn get_field(&self, index: usize) -> String {
-        self.fields[index].clone()
+    pub fn push_str(&mut self, string: impl Into<String>) {
+        self.fields[self.active_field].push_str(&string.into())
+    }
+
+    pub fn set_field(&mut self, field: impl Into<String>) {
+        self.fields[self.active_field] = field.into()
+    }
+
+    pub fn get_field(&self, idx: usize) -> String {
+        self.fields[idx].clone()
     }
 
     pub fn get_active_field(&self) -> &String {
         &self.fields[self.active_field]
     }
+    pub fn set_active_field(&mut self, idx: usize) {
+        self.active_field = idx
+    }
 
     pub fn get_fields(&self) -> Vec<String> {
         self.fields.clone()
+    }
+
+    pub fn next(&mut self) {
+        self.active_field += 1;
+        self.active_field %= self.fields.len();
+    }
+    pub fn prev(&mut self) {
+        // avoid underflow
+        self.active_field += self.fields.len() - 1;
+        self.active_field %= self.fields.len();
+    }
+
+    pub fn new_field(&mut self, default_value: impl Into<String>) {
+        self.fields.push(default_value.into());
+        self.active_field = self.fields.len() - 1;
     }
 
     pub fn pop(&mut self) {
@@ -39,21 +67,17 @@ impl EntryState {
     }
 
     pub fn show_cursor(mut self) -> Self {
-        self.cursor_pos = RefCell::new(Some((0, 0)));
+        self.cursor_pos = Some((0, 0)).into();
         self
     }
 
     pub fn hide_cursor(mut self) -> Self {
-        self.cursor_pos = RefCell::new(Some((0, 0)));
+        self.cursor_pos = None.into();
         self
     }
 
-    pub fn get_cursor(&self) -> Ref<Option<(u16, u16)>> {
-        self.cursor_pos.borrow()
-    }
-
-    pub fn set_field(&mut self, field: impl Into<String>) {
-        self.fields[self.active_field] = field.into()
+    pub fn get_cursor(&self) -> Option<(u16, u16)> {
+        self.cursor_pos.borrow().clone()
     }
 }
 
@@ -148,17 +172,6 @@ impl<'a> StatefulWidget for Entry<'a> {
         }
 
         buf.set_style(entry_area, self.field_style);
-        /* print all empty characters for the entire area of the entry widget to make it override
-        any other widget below */
-        let widget_empty = Text::raw(" ".repeat(widget_area.width as usize));
-        for i in 0..widget_area.height {
-            buf.set_spans(
-                widget_area.x,
-                widget_area.y + i,
-                &widget_empty.lines[0],
-                widget_area.width,
-            );
-        }
 
         let message = Text::raw(self.message);
         for (line_nr, line) in message.lines.iter().enumerate() {

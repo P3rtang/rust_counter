@@ -28,4 +28,22 @@ mod tests {
         app.close_dialog();
         assert_eq!(app.get_opened_dialog(), &Dialog::None);
     }
+    #[test]
+    fn test_dialog_field() {
+        let mut app = App::default();
+        app.open_dialog(Dialog::AddNew).unwrap();
+        assert_eq!(app.get_entry_state().get_active_field(), "");
+        app.get_entry_state().push('H');
+        assert_eq!(app.get_entry_state().get_active_field(), "H");
+        app.get_entry_state().push_str("ello, World!");
+        assert_eq!(app.get_entry_state().get_active_field(), "Hello, World!");
+        app.get_entry_state().next();
+        assert_eq!(app.get_entry_state().get_active_field(), "Hello, World!");
+        app.get_entry_state().new_field("");
+        assert_eq!(app.get_entry_state().get_active_field(), "");
+        app.get_entry_state().next();
+        assert_eq!(app.get_entry_state().get_active_field(), "Hello, World!");
+        app.get_entry_state().pop();
+        assert_eq!(app.get_entry_state().get_active_field(), "Hello, World");
+    }
 }

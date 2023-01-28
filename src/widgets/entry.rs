@@ -17,13 +17,6 @@ pub struct EntryState {
 }
 
 impl EntryState {
-    pub fn default() -> Self {
-        EntryState {
-            fields: vec![String::new(); 1],
-            active_field: 0,
-            cursor_pos: RefCell::new(Some((0, 0))),
-        }
-    }
 
     pub fn push(&mut self, charr: char) {
         self.fields[self.active_field].push(charr);
@@ -61,6 +54,16 @@ impl EntryState {
 
     pub fn set_field(&mut self, field: impl Into<String>) {
         self.fields[self.active_field] = field.into()
+    }
+}
+
+impl Default for EntryState {
+    fn default() -> Self {
+        EntryState {
+            fields: vec![String::new(); 1],
+            active_field: 0,
+            cursor_pos: RefCell::new(Some((0, 0))),
+        }
     }
 }
 

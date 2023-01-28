@@ -123,7 +123,7 @@ pub enum EditingState {
 }
 
 pub struct App {
-    pub state: AppState<2, 1>,
+    pub state: AppState<2>,
     pub c_store: CounterStore,
     pub ui_size: UiWidth,
     tick_rate: Duration,
@@ -317,6 +317,7 @@ impl App {
         if self.get_mode().intersects(AppMode::DIALOG_OPEN) {
             return Err(AppError::DialogAlreadyOpen(format!("{:?}", self.get_opened_dialog())))
         } 
+        self.state.new_entry("");
         self.toggle_mode(AppMode::DIALOG_OPEN);
         self.state.dialog = dialog;
         Ok(())
@@ -351,12 +352,8 @@ impl App {
         self.state.list_states[index].select(None)
     }
 
-    pub fn get_entry_state(&mut self, index: usize) -> &mut EntryState {
-        return self.state.entry_states.get_mut(index).unwrap();
-    }
-
-    pub fn reset_entry_state(&mut self, index: usize) {
-        self.state.entry_states[index] = EntryState::default();
+    pub fn get_entry_state(&mut self) -> &mut EntryState {
+        return &mut self.state.entry_state;
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
@@ -486,17 +483,15 @@ impl App {
         match key {
             Key::Esc => {
                 self.close_dialog();
-                self.reset_entry_state(0);
             }
             Key::Enter => {
-                let name = self.get_entry_state(0).get_active_field().clone();
+                let name = self.get_entry_state().get_active_field().clone();
                 self.c_store.push(Counter::new(name));
-                self.reset_entry_state(0);
                 self.close_dialog();
             }
-            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+            Key::Char(charr) if charr.is_ascii() => self.get_entry_state().push(charr),
             Key::Backspace => {
-                self.get_entry_state(0).pop();
+                self.get_entry_state().pop();
             }
             _ => {}
         }
@@ -530,19 +525,17 @@ impl App {
 
     fn rename_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
+            Key::Char(charr) if charr.is_ascii() => self.get_entry_state().push(charr),
             Key::Backspace => {
-                self.get_entry_state(0).pop();
+                self.get_entry_state().pop();
             }
             Key::Enter => {
-                let name = self.get_entry_state(0).get_active_field().clone();
+                let name = self.get_entry_state().get_active_field().clone();
                 self.get_mut_act_counter()?.set_name(&name);
-                self.reset_entry_state(0);
                 self.open_dialog(DS::Editing(ES::ChCount))?;
             }
             Key::Esc => {
                 self.close_dialog();
-                self.reset_entry_state(0);
             }
             _ => {}
         }
@@ -551,23 +544,21 @@ impl App {
 
     fn change_count_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
+            Key::Char(charr) if charr.is_numeric() => self.get_entry_state().push(charr),
             Key::Backspace => {
-                self.get_entry_state(0).pop();
+                self.get_entry_state().pop();
             }
             Key::Enter => {
                 let count = self
-                    .get_entry_state(0)
+                    .get_entry_state()
                     .get_active_field()
                     .parse()
                     .unwrap_or_else(|_| self.get_act_counter().unwrap().get_count());
                 self.get_mut_act_counter()?.set_count(count);
-                self.reset_entry_state(0);
                 self.open_dialog(DS::Editing(ES::ChTime))?;
             }
             Key::Esc => {
                 self.close_dialog();
-                self.reset_entry_state(0);
             }
             _ => {}
         }
@@ -576,23 +567,21 @@ impl App {
 
     fn change_time_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char(charr) if charr.is_numeric() => self.get_entry_state(0).push(charr),
+            Key::Char(charr) if charr.is_numeric() => self.get_entry_state().push(charr),
             Key::Backspace => {
-                self.get_entry_state(0).pop();
+                self.get_entry_state().pop();
             }
             Key::Enter => {
                 let time = self
-                    .get_entry_state(0)
+                    .get_entry_state()
                     .get_active_field()
                     .parse()
                     .unwrap_or(self.get_act_counter()?.get_time().as_secs() / 60);
                 self.get_mut_act_counter()?
                     .set_time(Duration::from_secs(time * 60));
-                self.reset_entry_state(0);
                 self.close_dialog()
             }
             Key::Esc => {
-                self.reset_entry_state(0);
                 self.close_dialog()
             }
             _ => {}
@@ -601,17 +590,15 @@ impl App {
     }
     fn rename_phase_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
-            Key::Backspace => self.get_entry_state(0).pop(),
+            Key::Char(charr) if charr.is_ascii() => self.get_entry_state().push(charr),
+            Key::Backspace => self.get_entry_state().pop(),
             Key::Enter => {
                 let phase = self.get_list_state(1).selected().unwrap_or(0);
-                let name = self.get_entry_state(0).get_active_field().clone();
+                let name = self.get_entry_state().get_active_field().clone();
                 self.get_mut_act_counter()?.set_phase_name(phase, name);
-                self.reset_entry_state(0);
                 self.close_dialog()
             }
             Key::Esc => {
-                self.reset_entry_state(0);
                 self.close_dialog()
             }
             _ => {}
@@ -671,20 +658,20 @@ impl Default for App {
 }
 
 #[derive(Default)]
-pub struct AppState<const T: usize, const U: usize> {
+pub struct AppState<const T: usize> {
     mode: RefCell<AppMode>,
     dialog: Dialog,
     list_states: Vec<ListState>,
-    entry_states: Vec<EntryState>,
+    entry_state: EntryState,
 }
 
-impl<const T: usize, const U: usize> AppState<T, U> {
+impl<const T: usize> AppState<T> {
     fn new() -> Self {
         Self {
             mode: RefCell::new(AppMode::default()),
             dialog: Dialog::None,
             list_states: vec![ListState::default(); T],
-            entry_states: vec![EntryState::default(); U],
+            entry_state: EntryState::default(),
         }
     }
 
@@ -699,5 +686,9 @@ impl<const T: usize, const U: usize> AppState<T, U> {
     fn toggle_mode(&self, mode: AppMode) {
         self.mode
             .swap(&RefCell::new(self.mode.clone().borrow().clone() ^ mode))
+    }
+
+    fn new_entry(&mut self, default_value: impl Into<String>) {
+        self.entry_state.set_field(default_value)
     }
 }

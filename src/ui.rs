@@ -86,23 +86,23 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
     // if any the app is in an entry state draw them last so they go on top
     match app.get_opened_dialog() {
         DS::AddNew => {
-            draw_entry(f, app.get_entry_state(0), "Name new Counter", (50, 10))
+            draw_entry(f, app.get_entry_state(), "Name new Counter", (50, 10))
         }
         DS::Editing(_) if app.get_mode().intersects(AppMode::PHASE_SELECT) => {
             let phase_title = format!(
                 "give phase {}\n a name",
                 app.get_act_phase_name()?
             );
-            draw_entry(f, app.get_entry_state(0), phase_title, (50, 10));
+            draw_entry(f, app.get_entry_state(), phase_title, (50, 10));
         }
         DS::Editing(ES::Rename) => {
-            draw_entry(f, app.get_entry_state(0), "Change Name", (50, 10)) 
+            draw_entry(f, app.get_entry_state(), "Change Name", (50, 10)) 
         }
         DS::Editing(ES::ChCount) => {
-            draw_entry(f, app.get_entry_state(0), "Change Count", (50, 10))
+            draw_entry(f, app.get_entry_state(), "Change Count", (50, 10))
         }
         DS::Editing(ES::ChTime) => {
-            draw_entry(f, app.get_entry_state(0), "Change Time", (50, 10));
+            draw_entry(f, app.get_entry_state(), "Change Time", (50, 10));
         }
         DS::Delete if app.get_mode().intersects(AppMode::PHASE_SELECT) =>  {
             if app.get_act_counter()?.get_phase_count() > 1 {

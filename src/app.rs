@@ -354,21 +354,6 @@ impl App {
         return &self.state.dialog;
     }
 
-    fn close_dialog(&mut self) {
-        self.state.dialog = DialogState::None;
-        self.state
-            .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
-    }
-
-    fn open_dialog(&mut self, dialog: DialogState) {
-        self.toggle_mode(AppMode::DIALOG_OPEN);
-        self.state.dialog = dialog
-    }
-
-    pub fn get_dialog_state(&self) -> DialogState {
-        return self.state.dialog.clone();
-    }
-
     pub fn get_list_state(&self, index: usize) -> &ListState {
         return self.state.list_states.get(index).unwrap();
     }
@@ -389,8 +374,8 @@ impl App {
         return &mut self.state.entry_state;
     }
 
-    pub fn reset_entry_state(&mut self, index: usize) {
-        self.state.entry_states[index] = EntryState::default();
+    pub fn reset_entry_state(&mut self) {
+        self.state.entry_state = EntryState::default();
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {

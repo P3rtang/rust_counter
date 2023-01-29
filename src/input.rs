@@ -1,17 +1,17 @@
 use crossterm::event::{DisableMouseCapture, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
+use nix::fcntl::{open, OFlag};
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
-use nix::fcntl::{open, OFlag};
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::{io, fs};
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use std::{fs, io};
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
@@ -70,35 +70,49 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
 
 pub struct DevInputFileDescriptor {
     file_descriptor: Arc<Mutex<AtomicI32>>,
-    active_file: (i32, i32)
+    active_file: (i32, i32),
 }
 
 impl DevInputFileDescriptor {
     fn new(fd: i32) -> Self {
-        Self { 
+        Self {
             file_descriptor: Arc::new(Mutex::new(AtomicI32::new(fd))),
             active_file: (0, 0),
         }
     }
-    pub fn get_kbd_inputs() -> HashMap<i32, String> {
+    pub fn get_kbd_inputs() -> Result<HashMap<i32, String>, AppError> {
         let mut map = HashMap::new();
         let input_files = fs::read_dir("/dev/input/by-id").unwrap();
         for file in input_files.into_iter().enumerate() {
             let filtered_name = if let Ok(file_name) = file.1 {
-                let file_name_str = file_name.file_name().to_str().unwrap().to_string();
+                let file_name_str = file_name
+                    .file_name()
+                    .to_str()
+                    .ok_or(AppError::DevIoError)?
+                    .to_string();
 
-                if !file_name_str.ends_with("event-kbd") { continue }
-                else if file_name_str.contains("if01") { continue } 
-                else { file_name_str }
-            } else { continue };
+                if !file_name_str.ends_with("event-kbd") {
+                    continue;
+                } else if file_name_str.contains("if01") {
+                    continue;
+                } else {
+                    file_name_str
+                }
+            } else {
+                continue;
+            };
             map.insert(file.0 as i32, filtered_name);
         }
-        map
+        Ok(map)
     }
     pub fn set_input(&mut self, id: i32) -> Result<(), AppError> {
         let fd = open(
-            Self::get_kbd_inputs().get(&id).unwrap_or(&"".to_string()).as_str(),
-            OFlag::O_RDONLY | OFlag::O_NONBLOCK, nix::sys::stat::Mode::empty()
+            Self::get_kbd_inputs()?
+                .get(&id)
+                .unwrap_or(&"".to_string())
+                .as_str(),
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+            nix::sys::stat::Mode::empty(),
         )?;
         self.file_descriptor.lock()?.store(fd, Ordering::SeqCst);
         Ok(())
@@ -178,7 +192,14 @@ impl EventHandler {
         })
     }
     pub fn toggle_mode(&mut self) {
-        if self.file_descriptor.file_descriptor.lock().unwrap().load(Ordering::SeqCst) == 0 {
+        if self
+            .file_descriptor
+            .file_descriptor
+            .lock()
+            .unwrap()
+            .load(Ordering::SeqCst)
+            == 0
+        {
             return;
         }
         self.clear();
@@ -191,8 +212,9 @@ impl EventHandler {
         return self.event_stream.lock().unwrap().clone();
     }
     pub fn poll(&self) -> Option<Event> {
-        if self.event_stream.lock().unwrap().len() == 0 { return None } 
-        else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
+        if self.event_stream.lock().unwrap().len() == 0 {
+            return None;
+        } else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
         {
             let _ = self.event_stream.lock().unwrap().pop();
             return None;
@@ -203,7 +225,8 @@ impl EventHandler {
         return Ok(self.event_stream.lock()?.len() != 0);
     }
     pub fn set_fd(&self, fd: i32) {
-        self.file_descriptor.file_descriptor
+        self.file_descriptor
+            .file_descriptor
             .lock()
             .unwrap()
             .store(fd, Ordering::SeqCst)

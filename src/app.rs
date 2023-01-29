@@ -189,7 +189,7 @@ impl App {
 
         self.debug_info.borrow_mut().insert(
             DebugKey::Debug("dev_input_files".to_string()),
-            DevInputFileDescriptor::get_kbd_inputs()
+            DevInputFileDescriptor::get_kbd_inputs()?
                 .into_iter()
                 .map(|(_key, value)| value + ", ")
                 .collect::<String>(),

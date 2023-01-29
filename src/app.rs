@@ -6,6 +6,7 @@ use crate::widgets::entry::EntryState;
 use crate::{settings, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
+use std::error::Error;
 use crossterm::event::KeyModifiers;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -34,6 +35,23 @@ pub enum AppError {
     ImpossibleState(String),
     ScreenSize(String),
     DialogAlreadyOpen(String),
+    EventEmpty(String),
+}
+
+impl Error for AppError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+
+    fn cause(&self) -> Option<&dyn Error> {
+        self.source()
+    }
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl From<io::Error> for AppError {
@@ -124,7 +142,7 @@ pub enum EditingState {
 }
 
 pub struct App {
-    pub state: AppState<2>,
+    pub state: AppState,
     pub c_store: CounterStore,
     pub ui_size: UiWidth,
     tick_rate: Duration,
@@ -140,7 +158,7 @@ pub struct App {
 impl App {
     pub fn new(tick_rate: u64, counter_store: CounterStore) -> Self {
         App {
-            state: AppState::new(),
+            state: AppState::new(2),
             tick_rate: Duration::from_millis(tick_rate),
             last_interaction: Instant::now(),
             c_store: counter_store,
@@ -187,7 +205,7 @@ impl App {
                     format!("{:?}", self.event_handler.get_buffer()[0]),
                 );
                 if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
-                    self.settings.handle_event(&self)?;
+                    self.settings.handle_event(&self.state, &self.event_handler)?;
                 } else {
                     self.handle_event()?;
                 }
@@ -681,19 +699,19 @@ impl Default for App {
 }
 
 #[derive(Default)]
-pub struct AppState<const T: usize> {
+pub struct AppState {
     mode: RefCell<AppMode>,
     dialog: Dialog,
     list_states: Vec<ListState>,
     entry_state: EntryState,
 }
 
-impl<const T: usize> AppState<T> {
-    fn new() -> Self {
+impl AppState {
+    fn new(lists: usize) -> Self {
         Self {
             mode: RefCell::new(AppMode::default()),
             dialog: Dialog::None,
-            list_states: vec![ListState::default(); T],
+            list_states: vec![ListState::default(); lists],
             entry_state: EntryState::default(),
         }
     }
@@ -706,7 +724,7 @@ impl<const T: usize> AppState<T> {
         self.mode.swap(&RefCell::new(mode))
     }
 
-    fn toggle_mode(&self, mode: AppMode) {
+    pub fn toggle_mode(&self, mode: AppMode) {
         self.mode
             .swap(&RefCell::new(self.mode.clone().borrow().clone() ^ mode))
     }

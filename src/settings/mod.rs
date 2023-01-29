@@ -1,8 +1,16 @@
-use std::time::Duration;
-use crate::{input::Key, app::{AppError, App}};
+use crate::{
+    app::{AppError, AppState},
+    input::{EventHandler, Key},
+};
 use std::io::Stdout;
-use tui::{backend::CrosstermBackend, Frame, layout::{Layout, Rect, Constraint}};
+use std::time::Duration;
+use tui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Layout, Rect},
+    Frame,
+};
 
+mod events;
 mod ui;
 
 const TICK_RATE: u64 = 25;
@@ -17,12 +25,12 @@ pub struct Settings {
 
 impl Settings {
     fn new(tick_rate: Duration, act_kbd_path: String) -> Self {
-        Self { 
+        Self {
             tick_rate,
             time_show_millis: true,
             act_kbd_path,
             keybinds: KeyMap::default(),
-            window: ui::SettingsWindow::default(),
+            window: ui::SettingsWindow::new(),
         }
     }
 
@@ -31,17 +39,21 @@ impl Settings {
     }
 
     pub fn get_key_map(&self) -> KeyMap {
-        return self.keybinds.clone()
+        return self.keybinds.clone();
     }
 
-    pub fn handle_event(&self, _app: &App) -> Result<(), AppError> {
-        todo!()
+    pub fn handle_event(
+        &mut self,
+        app_state: &AppState,
+        event_handler: &EventHandler,
+    ) -> Result<(), AppError> {
+        events::handle_event(&mut self.window, app_state, event_handler)
     }
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { 
+        Self {
             tick_rate: Duration::from_millis(1000 / TICK_RATE),
             time_show_millis: true,
             act_kbd_path: String::default(),
@@ -72,11 +84,23 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, settings: &Settings) -> Res
     settings.window.draw(f, f.size())
 }
 
-pub fn draw_as_overlay(f: &mut Frame<CrosstermBackend<Stdout>>, settings: &Settings) -> Result<(), AppError> {
-    let area = Layout::default().vertical_margin(5).horizontal_margin(20).constraints(vec![Constraint::Min(20)]).split(f.size());
+pub fn draw_as_overlay(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    settings: &Settings,
+) -> Result<(), AppError> {
+    let area = Layout::default()
+        .vertical_margin(5)
+        .horizontal_margin(20)
+        .constraints(vec![Constraint::Min(20)])
+        .split(f.size());
     settings.window.draw(f, area[0])
 }
 
-pub fn draw_sized(_f: &mut Frame<CrosstermBackend<Stdout>>, _settings: &Settings, _area: Rect, _is_overlay: bool) -> Result<(), AppError> {
+pub fn draw_sized(
+    _f: &mut Frame<CrosstermBackend<Stdout>>,
+    _settings: &Settings,
+    _area: Rect,
+    _is_overlay: bool,
+) -> Result<(), AppError> {
     todo!()
 }

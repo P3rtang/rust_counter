@@ -4,8 +4,8 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScree
 use nix::fcntl::{open, OFlag};
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
-use std::collections::HashMap;
 use std::fmt::Display;
+use std::fs::DirEntry;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -53,7 +53,7 @@ pub enum EventType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum HandlerMode {
+pub enum HandlerMode {
     DevInput,
     Terminal,
 }
@@ -68,6 +68,7 @@ impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct DevInputFileDescriptor {
     file_descriptor: Arc<Mutex<AtomicI32>>,
     active_file: (i32, i32),
@@ -80,43 +81,40 @@ impl DevInputFileDescriptor {
             active_file: (0, 0),
         }
     }
-    pub fn get_kbd_inputs() -> Result<HashMap<i32, String>, AppError> {
-        let mut map = HashMap::new();
-        let input_files = fs::read_dir("/dev/input/by-id").unwrap();
-        for file in input_files.into_iter().enumerate() {
-            let filtered_name = if let Ok(file_name) = file.1 {
-                let file_name_str = file_name
-                    .file_name()
-                    .to_str()
-                    .ok_or(AppError::DevIoError)?
-                    .to_string();
 
-                if !file_name_str.ends_with("event-kbd") {
-                    continue;
-                } else if file_name_str.contains("if01") {
-                    continue;
-                } else {
-                    file_name_str
-                }
-            } else {
-                continue;
-            };
-            map.insert(file.0 as i32, filtered_name);
-        }
-        Ok(map)
-    }
-    pub fn set_input(&mut self, id: i32) -> Result<(), AppError> {
+    pub fn set_input(&mut self, file: &str) -> Result<(), AppError> {
         let fd = open(
-            Self::get_kbd_inputs()?
-                .get(&id)
-                .unwrap_or(&"".to_string())
-                .as_str(),
+            file,
             OFlag::O_RDONLY | OFlag::O_NONBLOCK,
             nix::sys::stat::Mode::empty(),
         )?;
         self.file_descriptor.lock()?.store(fd, Ordering::SeqCst);
         Ok(())
     }
+}
+
+pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
+    let input_files = fs::read_dir("/dev/input/by-id").unwrap();
+    let process_file = |file: Result<DirEntry, io::Error>| -> Result<String, AppError> {
+        let rtn_file = file?
+            .file_name()
+            .to_str()
+            .ok_or(AppError::DevIoError(
+                "cannot read from /dev/input/".to_string(),
+            ))?
+            .to_string();
+        Ok(rtn_file)
+    };
+    let files = input_files
+        .into_iter()
+        .map(process_file)
+        .try_collect::<Vec<String>>()?
+        .into_iter()
+        .filter(|f| f.contains("-event-kbd"))
+        .filter(|f| !f.contains("-if01"))
+        .collect();
+
+    Ok(files)
 }
 
 pub struct EventHandler {
@@ -128,9 +126,9 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    pub fn new(fd: i32) -> Self {
+    pub fn new() -> Self {
         let mode = Arc::new(Mutex::new(AtomicU8::new(HandlerMode::Terminal as u8)));
-        let file_descriptor = DevInputFileDescriptor::new(fd);
+        let file_descriptor = DevInputFileDescriptor::default();
         let event_stream: EventStream = Arc::new(Mutex::new(vec![]));
         let thread_running_state = Arc::new(Mutex::new(AtomicBool::new(false)));
         let thread_terminal = EventHandler::spawn_thread(
@@ -179,6 +177,19 @@ impl EventHandler {
                         }
                     }
                     HandlerMode::DevInput => {
+                        if crossterm::event::poll(Duration::from_millis(0)).unwrap() {
+                            match crossterm::event::read().unwrap() {
+                                crossterm::event::Event::Key(key) => {
+                                    if key.code == KeyCode::Char('c')
+                                        && key.modifiers.intersects(KeyModifiers::CONTROL)
+                                    {
+                                        end().unwrap();
+                                        exit(2)
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                         if let Some(event) = DevInputEvent::poll(
                             -1,
                             fd.lock().unwrap().load(Ordering::SeqCst) as i32,
@@ -191,7 +202,7 @@ impl EventHandler {
             }
         })
     }
-    pub fn toggle_mode(&mut self) {
+    pub fn toggle_mode(&self) {
         if self
             .file_descriptor
             .file_descriptor
@@ -204,10 +215,17 @@ impl EventHandler {
         }
         self.clear();
         match self.mode.clone().into() {
-            HandlerMode::DevInput => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
             HandlerMode::Terminal => self.mode.lock().unwrap().store(0, Ordering::SeqCst),
+            HandlerMode::DevInput => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
         }
     }
+    pub fn set_mode(&self, mode: HandlerMode) {
+        match mode {
+            HandlerMode::DevInput => self.mode.lock().unwrap().store(0, Ordering::SeqCst),
+            HandlerMode::Terminal => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
+        }
+    }
+
     pub fn get_buffer(&self) -> Vec<Event> {
         return self.event_stream.lock().unwrap().clone();
     }
@@ -221,15 +239,26 @@ impl EventHandler {
         }
         return Some(self.event_stream.lock().unwrap().pop().unwrap());
     }
+
     pub fn has_event(&self) -> Result<bool, ThreadError> {
         return Ok(self.event_stream.lock()?.len() != 0);
     }
-    pub fn set_fd(&self, fd: i32) {
+
+    pub fn set_kbd(&self, file: &str) -> Result<(), AppError> {
+        let fd = open(
+            format!("/dev/input/by-id/{}", file).as_str(),
+            OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        self.set_fd(fd)
+    }
+
+    pub fn set_fd(&self, fd: i32) -> Result<(), AppError> {
         self.file_descriptor
             .file_descriptor
-            .lock()
-            .unwrap()
-            .store(fd, Ordering::SeqCst)
+            .lock()?
+            .store(fd, Ordering::SeqCst);
+        Ok(())
     }
     pub fn start(&mut self) -> Result<(), ThreadError> {
         self.thread_running_state
@@ -256,7 +285,7 @@ impl EventHandler {
 
 impl Default for EventHandler {
     fn default() -> Self {
-        Self::new(0)
+        Self::new()
     }
 }
 
@@ -287,6 +316,17 @@ pub struct Event {
     pub modifiers: KeyModifiers,
     pub time: Instant,
     mode: HandlerMode,
+}
+
+impl From<Key> for Event {
+    fn from(value: Key) -> Self {
+        return Self {
+            type_: EventType::KeyEvent(value),
+            modifiers: KeyModifiers::NONE,
+            time: Instant::now(),
+            mode: HandlerMode::Terminal,
+        };
+    }
 }
 
 impl From<DevInputEvent> for Event {
@@ -425,6 +465,16 @@ impl From<u16> for Key {
             96 => Key::Enter,
             _ => Key::Null,
             // TODO: add more keys
+        }
+    }
+}
+
+impl From<Event> for Key {
+    fn from(value: Event) -> Self {
+        if let EventType::KeyEvent(key) = value.type_ {
+            key
+        } else {
+            Key::Null
         }
     }
 }

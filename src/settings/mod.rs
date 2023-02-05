@@ -1,45 +1,67 @@
 use crate::{
     app::{AppError, AppState},
-    input::{EventHandler, Key},
+    input::{self, EventHandler, Key},
 };
+pub use item::ContentKey;
+use item::MainContents;
 use std::io::Stdout;
-use std::time::Duration;
 use tui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout},
     Frame,
 };
 
+use self::item::ContentItem;
+
 mod events;
+mod item;
 mod ui;
 
 const TICK_RATE: u64 = 25;
 
 pub struct Settings {
-    pub tick_rate: Duration,
-    pub time_show_millis: bool,
-    pub act_kbd_path: String,
     keybinds: KeyMap,
+    setting_items: MainContents,
     window: ui::SettingsWindow,
 }
 
 impl Settings {
-    fn new(tick_rate: Duration, act_kbd_path: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            tick_rate,
-            time_show_millis: true,
-            act_kbd_path,
             keybinds: KeyMap::default(),
+            setting_items: MainContents::new(),
             window: ui::SettingsWindow::new(),
         }
     }
 
-    fn set_tick_rate(&mut self, rate: u64) {
-        self.tick_rate = Duration::from_millis(1000 / rate);
-    }
-
     pub fn get_key_map(&self) -> KeyMap {
         return self.keybinds.clone();
+    }
+
+    pub fn get_settings(&self) -> &MainContents {
+        return &self.setting_items;
+    }
+
+    pub fn get_show_millis(&self) -> Result<bool, AppError> {
+        self.setting_items
+            .get_setting(ContentKey::ShowMillis)
+            .ok_or(AppError::SettingNotFound)?
+            .to_bool()
+    }
+
+    pub fn get_kbd_input(&self) -> Result<String, AppError> {
+        Ok(self
+            .setting_items
+            .get_setting(ContentKey::ActKeyboard)
+            .ok_or(AppError::SettingNotFound)?
+            .to_string())
+    }
+
+    pub fn load_keyboards(&mut self) -> Result<(), AppError> {
+        let setting = ContentItem::<String>::new(ContentKey::ActKeyboard, input::get_kbd_inputs()?);
+        self.setting_items
+            .set_setting(ContentKey::ActKeyboard, Box::new(setting));
+        Ok(())
     }
 
     pub fn handle_event(
@@ -47,19 +69,7 @@ impl Settings {
         app_state: &AppState,
         event_handler: &EventHandler,
     ) -> Result<(), AppError> {
-        events::handle_event(&mut self.window, app_state, event_handler)
-    }
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            tick_rate: Duration::from_millis(1000 / TICK_RATE),
-            time_show_millis: true,
-            act_kbd_path: String::default(),
-            keybinds: KeyMap::default(),
-            window: ui::SettingsWindow::default(),
-        }
+        events::handle_event(self, app_state, event_handler)
     }
 }
 
@@ -81,7 +91,7 @@ impl Default for KeyMap {
 }
 
 pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, settings: &Settings) -> Result<(), AppError> {
-    settings.window.draw(f, f.size())
+    settings.window.draw(f, f.size(), &settings.setting_items)
 }
 
 pub fn draw_as_overlay(
@@ -93,14 +103,5 @@ pub fn draw_as_overlay(
         .horizontal_margin(20)
         .constraints(vec![Constraint::Min(20)])
         .split(f.size());
-    settings.window.draw(f, area[0])
-}
-
-pub fn draw_sized(
-    _f: &mut Frame<CrosstermBackend<Stdout>>,
-    _settings: &Settings,
-    _area: Rect,
-    _is_overlay: bool,
-) -> Result<(), AppError> {
-    todo!()
+    settings.window.draw(f, area[0], &settings.setting_items)
 }

@@ -1,12 +1,6 @@
 use std::cell::RefCell;
 use crossterm::event::KeyCode;
-use tui::layout::Rect;
-use tui::text::Text;
-use tui::widgets::Block;
-use tui::{
-    style::Style,
-    widgets::{StatefulWidget, Widget},
-};
+use tui::{layout::Rect, text::Text, style::Style, widgets::{WidgetState, StatefulWidget, Widget, Block}};
 
 #[derive(Clone)]
 pub struct EntryState {
@@ -80,6 +74,8 @@ impl EntryState {
         self.cursor_pos.borrow().clone()
     }
 }
+
+impl WidgetState for EntryState {}
 
 impl Default for EntryState {
     fn default() -> Self {
@@ -161,7 +157,7 @@ impl<'a> StatefulWidget for Entry<'a> {
         };
 
         // calculate the area of the entry bar
-        let mut entry_area = Rect::default();
+        let mut entry_area = widget_area;
         if widget_area.width > self.field_width && widget_area.height > 3 {
             entry_area = Rect {
                 x: (widget_area.width - self.field_width) / 2 + widget_area.x,
@@ -223,11 +219,14 @@ impl<'a> StatefulWidget for Entry<'a> {
         }
 
         // display the usable keys on the bottom if space allows it and keys are initialized
-        let key_info = format!(
-            "<{:?}>Cancel  <{:?}>Confirm",
-            self.cancel_key.unwrap(),
-            self.confirm_key.unwrap()
-        );
+        let key_info = if self.confirm_key.is_some() && self.cancel_key.is_some() {
+            format!(
+                "<{:?}>Cancel  <{:?}>Confirm",
+                self.cancel_key.unwrap(),
+                self.confirm_key.unwrap()
+            )
+        } else {"".to_string()};
+
         if widget_area.height >= 4
             && widget_area.width > key_info.len() as u16
             && self.cancel_key.is_some()

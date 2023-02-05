@@ -4,7 +4,7 @@ use crate::{
 };
 pub use item::ContentKey;
 use item::MainContents;
-use std::io::Stdout;
+use std::{io::Stdout, time::Duration};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Layout},
@@ -40,6 +40,17 @@ impl Settings {
 
     pub fn get_settings(&self) -> &MainContents {
         return &self.setting_items;
+    }
+
+    pub fn get_tick_time(&self) -> Result<Duration, AppError> {
+        Ok(Duration::from_millis(1000 / self.get_tick_rate()?))
+    }
+
+    pub fn get_tick_rate(&self) -> Result<u64, AppError> {
+            Ok(self.setting_items
+                .get_setting(ContentKey::TickRate)
+                .ok_or(AppError::SettingNotFound)?
+                .to_value()? as u64)
     }
 
     pub fn get_show_millis(&self) -> Result<bool, AppError> {

@@ -148,7 +148,6 @@ pub struct App {
     pub state: AppState,
     pub c_store: CounterStore,
     pub ui_size: UiWidth,
-    tick_rate: Duration,
     last_interaction: Instant,
     running: bool,
     cursor_pos: Option<(u16, u16)>,
@@ -159,10 +158,9 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(tick_rate: u64, counter_store: CounterStore) -> Self {
+    pub fn new(counter_store: CounterStore) -> Self {
         App {
             state: AppState::new(2),
-            tick_rate: Duration::from_millis(tick_rate),
             last_interaction: Instant::now(),
             c_store: counter_store,
             ui_size: UiWidth::Big,
@@ -257,11 +255,14 @@ impl App {
                 terminal.set_cursor(pos.0, pos.1)?;
             }
 
-            thread::sleep(self.tick_rate - (Instant::now() - now_time));
             self.debug_info.borrow_mut().insert(
                 DebugKey::Debug("key event".to_string()),
                 format!("{:?}", self.event_handler.get_buffer()),
             );
+
+            if self.settings.get_tick_time()? > (Instant::now() - now_time) {
+                thread::sleep(self.settings.get_tick_time()? - (Instant::now() - now_time));
+            }
         }
         Ok(self)
     }
@@ -711,7 +712,6 @@ impl Default for App {
             state: AppState::default(),
             c_store: CounterStore::default(),
             ui_size: UiWidth::Medium,
-            tick_rate: Duration::from_millis(40),
             last_interaction: Instant::now(),
             running: true,
             cursor_pos: None,

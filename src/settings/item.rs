@@ -366,7 +366,7 @@ impl SettingsItem for ContentItem<u32> {
             Key::Backspace => self.widget_state.entry_state.pop(),
             Key::Enter => {
                 self.state = match self.widget_state.entry_state.get_active_field().parse::<u32>() {
-                    Ok(num) if num > self.options[0] && num < self.options[1] => Some(num),
+                    Ok(num) if num >= self.options[0] && num <= self.options[1] => Some(num),
                     _ => self.state,
                 }
             }

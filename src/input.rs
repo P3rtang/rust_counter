@@ -239,15 +239,6 @@ impl EventHandler {
         }
         return Some(self.event_stream.lock().unwrap().pop().unwrap());
     }
-    pub fn has_event(&self) -> Result<bool, ThreadError> {
-        return Ok(self.event_stream.lock()?.len() != 0);
-    }
-    pub fn set_fd(&self, fd: i32) {
-        self.file_descriptor
-            .lock()
-            .unwrap()
-            .store(fd, Ordering::SeqCst)
-    }
 
     pub fn has_event(&self) -> Result<bool, ThreadError> {
         return Ok(self.event_stream.lock()?.len() != 0);

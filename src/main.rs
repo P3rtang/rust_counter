@@ -1,5 +1,8 @@
 #![allow(dead_code)]
+#![feature(iterator_try_collect)]
+
 use crate::app::DebugKey;
+use app::App;
 use nix::fcntl::{open, OFlag};
 use std::time::SystemTime;
 
@@ -39,9 +42,17 @@ fn main() {
     };
     app = app.set_super_user(fd);
 
-    app = app.start().unwrap();
-    let store = app.end().unwrap();
-    store.to_json(SAVE_FILE);
+    match app.start() {
+        Ok(app) => {
+            let store = app.end().unwrap();
+            store.to_json(SAVE_FILE);
+        },
+        Err(e) => {
+            App::default().end().unwrap();
+            println!("{}", e);
+            panic!()
+        }
+    };
 }
 
 fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {

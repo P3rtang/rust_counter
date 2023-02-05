@@ -44,5 +44,5 @@ The keylogger bypasses this so you can use the counter in the background
 - [x] basic functionality
 - [x] hunt phases
 - [x] keylogger
-- [ ] keylogger auto keyboard detect
+- [x] keylogger auto keyboard detect
 - [ ] opening multiple counters at once 

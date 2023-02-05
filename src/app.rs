@@ -1,12 +1,11 @@
 use crate::counter::{Counter, CounterStore};
-use crate::input::{DevInputFileDescriptor, EventHandler, EventType, Key, ThreadError};
+use crate::input::{self, EventHandler, EventType, Key, ThreadError, HandlerMode};
 use crate::settings::{KeyMap, Settings};
 use crate::ui::{self, UiWidth};
 use crate::widgets::entry::EntryState;
 use crate::{settings, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
-use std::error::Error;
 use crossterm::event::KeyModifiers;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -16,6 +15,7 @@ use crossterm::{
 use nix::errno::Errno;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
+use std::error::Error;
 use std::io;
 use std::sync::{MutexGuard, PoisonError};
 use std::thread;
@@ -29,13 +29,16 @@ use EditingState as ES;
 pub enum AppError {
     GetCounterError,
     GetPhaseError,
-    DevIoError,
+    DevIoError(String),
     IoError,
+    SettingNotFound,
+    InputThread,
     ThreadError(ThreadError),
     ImpossibleState(String),
     ScreenSize(String),
     DialogAlreadyOpen(String),
     EventEmpty(String),
+    SettingsType(String),
 }
 
 impl Error for AppError {
@@ -67,14 +70,14 @@ impl From<ThreadError> for AppError {
 }
 
 impl From<Errno> for AppError {
-    fn from(_: Errno) -> Self {
-        Self::DevIoError
+    fn from(e: Errno) -> Self {
+        Self::DevIoError(e.to_string())
     }
 }
 
 impl From<PoisonError<MutexGuard<'_, AtomicI32>>> for AppError {
     fn from(_: PoisonError<MutexGuard<'_, AtomicI32>>) -> Self {
-        Self::DevIoError
+        Self::InputThread
     }
 }
 
@@ -165,14 +168,14 @@ impl App {
             ui_size: UiWidth::Big,
             running: true,
             cursor_pos: None,
-            event_handler: EventHandler::new(0),
+            event_handler: EventHandler::default(),
             debug_info: RefCell::new(HashMap::new()),
-            settings: Settings::default(),
+            settings: Settings::new(),
             key_map: KeyMap::default(),
         }
     }
     pub fn set_super_user(self, input_fd: i32) -> Self {
-        self.event_handler.set_fd(input_fd);
+        self.event_handler.set_fd(input_fd).unwrap();
         self
     }
     pub fn start(mut self) -> Result<App, AppError> {
@@ -184,6 +187,8 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
 
         self.event_handler.start()?;
+        // update the settings menu with the correct infomation
+        self.settings.load_keyboards()?;
 
         self.list_select(0, Some(0));
 
@@ -192,9 +197,9 @@ impl App {
 
         self.debug_info.borrow_mut().insert(
             DebugKey::Debug("dev_input_files".to_string()),
-            DevInputFileDescriptor::get_kbd_inputs()?
+            input::get_kbd_inputs()?
                 .into_iter()
-                .map(|(_key, value)| value + ", ")
+                .map(|value| value + ", ")
                 .collect::<String>(),
         );
 
@@ -205,7 +210,8 @@ impl App {
                     format!("{:?}", self.event_handler.get_buffer()[0]),
                 );
                 if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
-                    self.settings.handle_event(&self.state, &self.event_handler)?;
+                    self.settings
+                        .handle_event(&self.state, &self.event_handler)?;
                 } else {
                     self.handle_event()?;
                 }
@@ -338,6 +344,10 @@ impl App {
         self.state.toggle_mode(mode)
     }
 
+    pub fn exit_mode(&self, mode: AppMode) {
+        self.state.exit_mode(mode)
+    }
+
     /// Sets the [mode](App::state::mode) of [`App`]
     /// back to the default mode
     /// this is [AppMode::SELECTION]
@@ -345,14 +355,17 @@ impl App {
         self.state.set_mode(AppMode::SELECTION)
     }
 
-    /// Opens a `dialog`: [`DialogState`] 
+    /// Opens a `dialog`: [`DialogState`]
     /// Also set the `mode` of `App` to `AppMode::DIALOG_OPEN`
     ///
     /// Opening multiple dialogs at once will result in an error
     pub fn open_dialog(&mut self, dialog: Dialog) -> Result<(), AppError> {
         if self.get_mode().intersects(AppMode::DIALOG_OPEN) {
-            return Err(AppError::DialogAlreadyOpen(format!("{:?}", self.get_opened_dialog())))
-        } 
+            return Err(AppError::DialogAlreadyOpen(format!(
+                "{:?}",
+                self.get_opened_dialog()
+            )));
+        }
         self.state.new_entry("");
         self.toggle_mode(AppMode::DIALOG_OPEN);
         self.state.dialog = dialog;
@@ -505,13 +518,29 @@ impl App {
                 self.c_store.to_json(SAVE_FILE)
             }
             key if self.key_map.key_toggle_keylogger.contains(&key) => {
-                self.event_handler.toggle_mode();
-                self.toggle_mode(AppMode::KEYLOGGING)
+                match self.event_handler.set_kbd(&self.settings.get_kbd_input()?) {
+                    Ok(_) => {
+                        self.event_handler.toggle_mode();
+                        self.toggle_mode(AppMode::KEYLOGGING)
+                    }
+                    Err(AppError::DevIoError(e)) => {
+                        self.debug_info
+                            .borrow_mut()
+                            .insert(DebugKey::Warning("DevInput".to_string()), e);
+                    }
+                    Err(e) => return Err(e),
+                };
             }
             Key::Char('q') | Key::Esc => {
+                self.event_handler.set_mode(HandlerMode::Terminal);
+                if self.get_mode().intersects(AppMode::KEYLOGGING) {
+                    self.exit_mode(AppMode::KEYLOGGING)
+                }
+
                 if !self.get_mode().intersects(AppMode::PHASE_SELECT) {
                     self.list_deselect(1)
                 }
+
                 self.toggle_mode(AppMode::COUNTING);
             }
             _ => {}
@@ -621,9 +650,7 @@ impl App {
                     .set_time(Duration::from_secs(time * 60));
                 self.close_dialog()
             }
-            Key::Esc => {
-                self.close_dialog()
-            }
+            Key::Esc => self.close_dialog(),
             _ => {}
         }
         Ok(())
@@ -688,9 +715,9 @@ impl Default for App {
             last_interaction: Instant::now(),
             running: true,
             cursor_pos: None,
-            event_handler: EventHandler::new(0),
+            event_handler: EventHandler::default(),
             debug_info: RefCell::new(HashMap::default()),
-            settings: Settings::default(),
+            settings: Settings::new(),
             key_map: KeyMap::default(),
         }
     }
@@ -725,6 +752,10 @@ impl AppState {
     pub fn toggle_mode(&self, mode: AppMode) {
         self.mode
             .swap(&RefCell::new(self.mode.clone().borrow().clone() ^ mode))
+    }
+
+    pub fn exit_mode(&self, mode: AppMode) {
+        self.mode.swap(&RefCell::new(self.mode.clone().borrow().clone() & AppMode::complement(mode)))
     }
 
     fn new_entry(&mut self, default_value: impl Into<String>) {

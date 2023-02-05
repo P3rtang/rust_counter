@@ -46,4 +46,5 @@ The keylogger bypasses this so you can use the counter in the background
 - [x] keylogger
 - [x] keylogger auto keyboard detect
 - [x] settings menu framework
+- [ ] better testing 
 - [ ] opening multiple counters at once 

@@ -4,6 +4,7 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScree
 use nix::fcntl::{open, OFlag};
 use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
+use std::char::CharTryFromError;
 use std::fmt::Display;
 use std::fs::DirEntry;
 use std::process::exit;
@@ -240,8 +241,11 @@ impl EventHandler {
         return Some(self.event_stream.lock().unwrap().pop().unwrap());
     }
 
-    pub fn has_event(&self) -> Result<bool, ThreadError> {
-        return Ok(self.event_stream.lock()?.len() != 0);
+    pub fn has_event(&self) -> bool {
+        match self.event_stream.lock() {
+            Ok(stream) => stream.len() != 0,
+            Err(_) => false,
+        }
     }
 
     pub fn set_kbd(&self, file: &str) -> Result<(), AppError> {
@@ -280,6 +284,15 @@ impl EventHandler {
     }
     fn clear(&self) {
         self.event_stream.lock().unwrap().clear();
+    }
+
+    pub fn simulate_key(&self, key: Key) {
+        self.event_stream.lock().unwrap().insert(0, Event {
+            type_: EventType::KeyEvent(key),
+            modifiers: KeyModifiers::NONE,
+            time: Instant::now(),
+            mode: HandlerMode::Terminal,
+        })
     }
 }
 
@@ -479,8 +492,41 @@ impl From<Event> for Key {
     }
 }
 
+impl TryInto<char> for Key {
+    type Error = CharTryFromError;
+    fn try_into(self) -> Result<char, Self::Error> {
+        match self {
+            Key::Char(char_) => return Ok(char_),
+            _ => panic!()
+        }
+    }
+}
+
 impl Display for Key {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+#[cfg(test)] 
+mod input_test {
+    use super::*;
+
+    #[test]
+    fn test_simulate_key() {
+        let event_handler = EventHandler::default();
+        event_handler.simulate_key(Key::Char('h'));
+        let key: Key = event_handler.poll().unwrap().into();
+        assert_eq!(key, Key::Char('h'));
+        assert_ne!(key, Key::Enter);
+        event_handler.simulate_key(Key::Char('f'));
+        event_handler.simulate_key(Key::Char('o'));
+        event_handler.simulate_key(Key::Char('o'));
+        let mut word = String::new();
+        while event_handler.has_event() {
+            let key: Key = event_handler.poll().unwrap().into();
+            word.push(key.try_into().unwrap())
+        }
+        assert_eq!(word, "foo".to_string())
     }
 }

@@ -69,6 +69,18 @@ impl From<ThreadError> for AppError {
     }
 }
 
+impl From<Errno> for AppError {
+    fn from(e: Errno) -> Self {
+        Self::DevIoError(e.to_string())
+    }
+}
+
+impl From<PoisonError<MutexGuard<'_, AtomicI32>>> for AppError {
+    fn from(_: PoisonError<MutexGuard<'_, AtomicI32>>) -> Self {
+        Self::InputThread
+    }
+}
+
 #[derive(Eq, Hash, PartialEq)]
 pub enum DebugKey {
     Debug(String),
@@ -80,35 +92,30 @@ pub enum DebugKey {
 impl std::fmt::Display for DebugKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DebugKey::Debug(name)   => write!(f, "[DEBUG] {}", name),
-            DebugKey::Info(name)    => write!(f, "[INFO] {}",  name),
-            DebugKey::Warning(name) => write!(f, "[WARN] {}",  name),
-            DebugKey::Fatal(name)   => write!(f, "[FATAL] {}", name),
+            DebugKey::Debug(name) => write!(f, "[DEBUG] {}", name),
+            DebugKey::Info(name) => write!(f, "[INFO] {}", name),
+            DebugKey::Warning(name) => write!(f, "[WARN] {}", name),
+            DebugKey::Fatal(name) => write!(f, "[FATAL] {}", name),
         }
     }
 }
 
 bitflags! {
     pub struct AppMode: u16 {
-        const SELECTION    = 0b0000_0000_0001;
-        const PHASE_SELECT = 0b0000_0000_0010;
-        const COUNTING     = 0b0000_0000_0100;
-        const KEYLOGGING   = 0b0000_0000_1000;
+        const SELECTION      = 0b0000_0000_0001;
+        const PHASE_SELECT   = 0b0000_0000_0010;
+        const COUNTING       = 0b0000_0000_0100;
+        const KEYLOGGING     = 0b0000_0000_1000;
 
-        const DIALOG_OPEN  = 0b0000_0001_0000;
+        const DIALOG_OPEN    = 0b0000_0001_0000;
+        const SETTINGS_OPEN  = 0b0000_0010_0000;
 
-        const DEBUGGING    = 0b1000_0000_0000;
+        const DIALOG_CLOSE   = 0b1111_1110_1111;
+        const SETTINGS_CLOSE = 0b1111_1101_1111;
+
+        const DEBUGGING      = 0b1000_0000_0000;
     }
 }
-
-// #[derive(Clone, PartialEq, Eq)]
-// pub enum AppMode {
-//     Selection(DialogState),
-//     PhaseSelect(DialogState),
-//     Counting(u8),
-//     KeyLogger(u8),
-//     Debugging,
-// }
 
 impl Default for AppMode {
     fn default() -> Self {
@@ -126,7 +133,7 @@ pub enum Dialog {
 
 impl Default for Dialog {
     fn default() -> Self {
-        return Self::None
+        return Self::None;
     }
 }
 
@@ -155,13 +162,14 @@ impl App {
         App {
             state: AppState::new(2),
             last_interaction: Instant::now(),
-            c_store:          counter_store,
-            ui_size:          UiWidth::Big,
-            running:          true,
-            time_show_millis: true,
-            cursor_pos:       None,
-            event_handler:    EventHandler::new(0),
-            debug_info:       RefCell::new(HashMap::new()),
+            c_store: counter_store,
+            ui_size: UiWidth::Big,
+            running: true,
+            cursor_pos: None,
+            event_handler: EventHandler::default(),
+            debug_info: RefCell::new(HashMap::new()),
+            settings: Settings::new(),
+            key_map: KeyMap::default(),
         }
     }
     pub fn set_super_user(self, input_fd: i32) -> Self {
@@ -337,8 +345,8 @@ impl App {
         self.state.toggle_mode(mode)
     }
 
-    fn exit_mode(&mut self, mode: AppMode) {
-        self.state.mode &= mode.complement()
+    pub fn exit_mode(&self, mode: AppMode) {
+        self.state.exit_mode(mode)
     }
 
     /// Sets the [mode](App::state::mode) of [`App`]
@@ -423,11 +431,11 @@ impl App {
         // parsing the state the app is in return an error when in an impossible list_states
         // otherwise directing the key to the correct input parser
         if self.get_mode().intersects(AppMode::DIALOG_OPEN) {
-             if self.get_mode().intersects(AppMode::PHASE_SELECT) {
+            if self.get_mode().intersects(AppMode::PHASE_SELECT) {
                 match self.state.dialog {
-                    DialogState::Delete => self.delete_phase_key_event(key)?,
-                    DialogState::Editing(ES::Rename) => self.rename_phase_key_event(key)?,
-                    _ => return Err(AppError::ImpossibleState),
+                    Dialog::Delete => self.delete_phase_key_event(key)?,
+                    Dialog::Editing(ES::Rename) => self.rename_phase_key_event(key)?,
+                    _ => return Err(AppError::ImpossibleState(format!("{:?}", self.get_mode()))),
                 }
             } else if self.get_mode().intersects(AppMode::SELECTION) {
                 match self.state.dialog {
@@ -502,11 +510,11 @@ impl App {
 
     fn counter_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
-            Key::Char(charr) if (charr == '=') | (charr == '+') => {
+            key if self.key_map.key_increase_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(1);
                 self.c_store.to_json(SAVE_FILE)
             }
-            Key::Char('-') => {
+            key if self.key_map.key_decrease_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(-1);
                 self.c_store.to_json(SAVE_FILE)
             }
@@ -542,70 +550,6 @@ impl App {
     }
 
     fn add_counter_key_event(&mut self, key: Key) -> Result<(), AppError> {
-        match key {
-            Key::Esc => {
-                self.close_dialog();
-            }
-            Key::Enter => {
-                let name = self.get_entry_state().get_active_field().clone();
-                self.c_store.push(Counter::new(name));
-                self.close_dialog();
-            }
-            Key::Char(charr) if charr.is_ascii() => self.get_entry_state(0).push(charr),
-            Key::Backspace => {
-                self.get_entry_state(0).pop();
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn delete_counter_key_event(&mut self, key: Key) -> Result<(), AppError> {
-        match key {
-            Key::Enter => {
-                self.set_mode(AppMode::SELECTION);
-                if let Some(selected) = self.get_list_state(0).selected() {
-                    if self.c_store.len() == 1 {
-                        self.c_store.remove(0);
-                    }
-
-                    self.c_store.remove(selected);
-                    if selected == self.c_store.len() {
-                        self.list_select(0, Some(selected - 1))
-                    }
-                }
-            }
-            Key::Esc => self.set_mode(AppMode::SELECTION),
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn delete_phase_key_event(&mut self, _key: Key) -> Result<(), AppError> {
-        todo!()
-    }
-
-    fn rename_key_event(&mut self, key: Key) -> Result<(), AppError> {
-        match key {
-            key if self.key_map.key_increase_counter.contains(&key) => {
-                self.get_mut_act_counter()?.increase_by(1);
-                self.c_store.to_json(SAVE_FILE)
-            }
-            Key::Enter => {
-                let name = self.get_entry_state(0).get_active_field().clone();
-                self.get_mut_act_counter()?.set_name(&name);
-                self.reset_entry_state(0);
-                self.open_dialog(DS::Editing(ES::ChCount));
-            }
-            Key::Esc => {
-                self.close_dialog();
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn change_count_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
             Key::Esc => {
                 self.close_dialog();
@@ -780,20 +724,41 @@ impl Default for App {
 }
 
 #[derive(Default)]
-pub struct AppState<const T:usize, const U:usize> {
-    mode:         AppMode,
-    dialog:       DialogState,
-    list_states:  Vec<ListState>,
-    entry_states: Vec<EntryState>,
+pub struct AppState {
+    mode: RefCell<AppMode>,
+    dialog: Dialog,
+    list_states: Vec<ListState>,
+    entry_state: EntryState,
 }
 
-impl<const T:usize, const U:usize> AppState<T, U> {
-    fn new() -> Self {
-        Self { 
-            mode:         AppMode::default(),
-            dialog:       DialogState::None,
-            list_states:  vec![ ListState::default(); T],
-            entry_states: vec![EntryState::default(); U],
+impl AppState {
+    fn new(lists: usize) -> Self {
+        Self {
+            mode: RefCell::new(AppMode::default()),
+            dialog: Dialog::None,
+            list_states: vec![ListState::default(); lists],
+            entry_state: EntryState::default(),
         }
+    }
+
+    fn get_mode(&self) -> AppMode {
+        self.mode.clone().into_inner()
+    }
+
+    fn set_mode(&self, mode: AppMode) {
+        self.mode.swap(&RefCell::new(mode))
+    }
+
+    pub fn toggle_mode(&self, mode: AppMode) {
+        self.mode
+            .swap(&RefCell::new(self.mode.clone().borrow().clone() ^ mode))
+    }
+
+    pub fn exit_mode(&self, mode: AppMode) {
+        self.mode.swap(&RefCell::new(self.mode.clone().borrow().clone() & AppMode::complement(mode)))
+    }
+
+    fn new_entry(&mut self, default_value: impl Into<String>) {
+        self.entry_state.set_field(default_value)
     }
 }

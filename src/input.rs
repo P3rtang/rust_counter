@@ -247,6 +247,7 @@ impl EventHandler {
             .lock()
             .unwrap()
             .store(fd, Ordering::SeqCst)
+    }
 
     pub fn has_event(&self) -> Result<bool, ThreadError> {
         return Ok(self.event_stream.lock()?.len() != 0);

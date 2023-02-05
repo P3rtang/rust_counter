@@ -202,7 +202,7 @@ impl App {
         );
 
         while self.running {
-            while self.event_handler.has_event()? {
+            while self.event_handler.has_event() {
                 self.debug_info.borrow_mut().insert(
                     DebugKey::Debug("Last Key".to_string()),
                     format!("{:?}", self.event_handler.get_buffer()[0]),
@@ -343,10 +343,6 @@ impl App {
     /// and only flips the passed appmode on or off
     pub fn toggle_mode(&self, mode: AppMode) {
         self.state.toggle_mode(mode)
-    }
-
-    pub fn exit_mode(&self, mode: AppMode) {
-        self.state.exit_mode(mode)
     }
 
     /// Sets the [mode](App::state::mode) of [`App`]
@@ -535,7 +531,7 @@ impl App {
             Key::Char('q') | Key::Esc => {
                 self.event_handler.set_mode(HandlerMode::Terminal);
                 if self.get_mode().intersects(AppMode::KEYLOGGING) {
-                    self.exit_mode(AppMode::KEYLOGGING)
+                    self.toggle_mode(AppMode::KEYLOGGING)
                 }
 
                 if !self.get_mode().intersects(AppMode::PHASE_SELECT) {
@@ -760,5 +756,36 @@ impl AppState {
 
     fn new_entry(&mut self, default_value: impl Into<String>) {
         self.entry_state.set_field(default_value)
+    }
+}
+
+#[cfg(test)]
+mod test_app {
+    use super::*;
+    #[test]
+    fn test_input_handling() {
+        let mut app = App::default();
+        assert!(app.handle_event().is_ok());
+        app.event_handler.simulate_key(Key::Char('n'));
+        app.handle_event().unwrap();
+        assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0001_0001).unwrap());
+        app.event_handler.simulate_key(Key::Char('n'));
+        app.event_handler.simulate_key(Key::Char('e'));
+        app.event_handler.simulate_key(Key::Char('w'));
+        app.event_handler.simulate_key(Key::Enter);
+        while app.event_handler.has_event() {
+            app.handle_event().unwrap();
+        }
+        assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_0001).unwrap());
+        assert_eq!(app.c_store.get_counters(), vec![RefCell::new(Counter::new("new"))])
+    }
+    #[test]
+    fn test_new_counter_dialog() {
+        let mut app = App::default();
+        app.event_handler.simulate_key(Key::Char('n'));
+        app.handle_event().unwrap();
+        app.event_handler.simulate_key(Key::Char('f'));
+        app.handle_event().unwrap();
+        assert_eq!(app.state.entry_state.get_active_field(), "f")
     }
 }

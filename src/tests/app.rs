@@ -1,6 +1,6 @@
 #[cfg(test)]
 
-mod tests {
+mod global_test_app {
     use crate::app::*;
 
     #[test]
@@ -16,6 +16,9 @@ mod tests {
         assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_0000).unwrap());
         app.reset_mode();
         assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_0001).unwrap());
+        app.toggle_mode(AppMode::COUNTING);
+        app.toggle_mode(AppMode::KEYLOGGING);
+        assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_1101).unwrap());
     }
     #[test]
     fn test_dialogs() {

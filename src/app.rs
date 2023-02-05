@@ -638,9 +638,7 @@ impl App {
                 self.get_mut_act_counter()?.set_phase_name(phase, name);
                 self.close_dialog()
             }
-            Key::Esc => {
-                self.close_dialog()
-            }
+            Key::Esc => self.close_dialog(),
             _ => {}
         }
         Ok(())

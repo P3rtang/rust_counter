@@ -45,4 +45,5 @@ The keylogger bypasses this so you can use the counter in the background
 - [x] hunt phases
 - [x] keylogger
 - [x] keylogger auto keyboard detect
+- [x] settings menu framework
 - [ ] opening multiple counters at once 

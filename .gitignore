@@ -2,6 +2,7 @@ target
 data.json
 Cargo.lock
 data.json
+data.sav
 .vim_session
 .dev-scripts/
 postgres/

@@ -1,12 +1,11 @@
 use crate::counter::{Counter, CounterStore};
-use crate::input::{self, EventHandler, EventType, Key, ThreadError, HandlerMode};
+use crate::input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError};
 use crate::settings::{KeyMap, Settings};
 use crate::ui::{self, UiWidth};
 use crate::widgets::entry::EntryState;
 use crate::{settings, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
-use std::error::Error;
 use crossterm::event::KeyModifiers;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -14,8 +13,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use nix::errno::Errno;
+use std::backtrace::Backtrace;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
+use std::error::Error;
 use std::io;
 use std::sync::{MutexGuard, PoisonError};
 use std::thread;
@@ -24,10 +25,9 @@ use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
 use Dialog as DS;
 use EditingState as ES;
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum AppError {
-    GetCounterError,
+    GetCounterError(Backtrace),
     GetPhaseError,
     DevIoError(String),
     IoError,
@@ -109,9 +109,6 @@ bitflags! {
 
         const DIALOG_OPEN    = 0b0000_0001_0000;
         const SETTINGS_OPEN  = 0b0000_0010_0000;
-
-        const DIALOG_CLOSE   = 0b1111_1110_1111;
-        const SETTINGS_CLOSE = 0b1111_1101_1111;
 
         const DEBUGGING      = 0b1000_0000_0000;
     }
@@ -202,9 +199,7 @@ impl App {
         );
 
         while self.running {
-            while self.event_handler.has_event() {
-            }
-
+            self.handle_events()?;
             // timing the execution time of the loop and add it to the counter time
             // only do this in counting mode
             now_time = Instant::now();
@@ -262,7 +257,7 @@ impl App {
         if let Some(counter) = self.c_store.get(selection) {
             Ok(counter)
         } else {
-            Err(AppError::GetCounterError)
+            Err(AppError::GetCounterError(Backtrace::capture()))
         }
     }
 
@@ -271,7 +266,7 @@ impl App {
         if let Some(counter) = self.c_store.get_mut(selection) {
             Ok(counter)
         } else {
-            Err(AppError::GetCounterError)
+            Err(AppError::GetCounterError(Backtrace::capture()))
         }
     }
 
@@ -364,8 +359,7 @@ impl App {
     pub fn close_dialog(&mut self) {
         self.state.dialog = Dialog::None;
         self.state.clear_entry();
-        self.state
-            .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
+        self.toggle_mode(AppMode::DIALOG_OPEN);
     }
 
     /// returns a borrow of the dialog currently opened
@@ -397,7 +391,7 @@ impl App {
         self.state.entry_state = EntryState::default();
     }
 
-    fn handle_events(&mut self) -> Result<(), AppError> {
+    pub fn handle_events(&mut self) -> Result<(), AppError> {
         while self.event_handler.has_event() {
             self.debug_info.borrow_mut().insert(
                 DebugKey::Debug("Last Key".to_string()),
@@ -574,17 +568,11 @@ impl App {
     fn delete_counter_key_event(&mut self, key: Key) -> Result<(), AppError> {
         match key {
             Key::Enter => {
-                self.set_mode(AppMode::SELECTION);
-                if let Some(selected) = self.get_list_state(0).selected() {
-                    if self.c_store.len() == 1 {
-                        self.c_store.remove(0);
-                    }
-
-                    self.c_store.remove(selected);
-                    if selected == self.c_store.len() {
-                        self.list_select(0, Some(selected - 1))
-                    }
+                if self.c_store.len() < 1 {
+                    return Err(AppError::GetCounterError(Backtrace::capture()));
                 }
+                self.c_store.remove(self.get_list_state(0).selected().unwrap_or(0));
+                self.close_dialog()
             }
             Key::Esc => self.close_dialog(),
             _ => {}
@@ -758,7 +746,9 @@ impl AppState {
     }
 
     pub fn exit_mode(&self, mode: AppMode) {
-        self.mode.swap(&RefCell::new(self.mode.clone().borrow().clone() & AppMode::complement(mode)))
+        self.mode.swap(&RefCell::new(
+            self.mode.clone().borrow().clone() & AppMode::complement(mode),
+        ))
     }
 
     fn new_entry(&mut self, default_value: impl Into<String>) {
@@ -766,7 +756,7 @@ impl AppState {
     }
 
     fn clear_entry(&mut self) {
-        self.entry_state.set_field("");
+        self.entry_state = EntryState::default();
     }
 }
 
@@ -779,14 +769,23 @@ mod test_app {
         assert!(app.handle_event().is_ok());
         app.event_handler.simulate_key(Key::Char('n'));
         app.handle_event().unwrap();
-        assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0001_0001).unwrap());
+        assert_eq!(
+            app.get_mode(),
+            AppMode::from_bits(0b0000_0001_0001).unwrap()
+        );
         app.event_handler.simulate_key(Key::Char('n'));
         app.event_handler.simulate_key(Key::Char('e'));
         app.event_handler.simulate_key(Key::Char('w'));
         app.event_handler.simulate_key(Key::Enter);
         app.handle_events().unwrap();
-        assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_0001).unwrap());
-        assert_eq!(app.c_store.get_counters(), vec![RefCell::new(Counter::new("new"))])
+        assert_eq!(
+            app.get_mode(),
+            AppMode::from_bits(0b0000_0000_0001).unwrap()
+        );
+        assert_eq!(
+            app.c_store.get_counters(),
+            vec![RefCell::new(Counter::new("new"))]
+        )
     }
     #[test]
     fn test_new_counter_dialog() {
@@ -804,6 +803,27 @@ mod test_app {
         app.event_handler.simulate_key(Key::Enter);
         app.handle_events().unwrap();
         assert_eq!(app.state.entry_state.get_active_field(), "");
-        assert_eq!(app.c_store.get_counters(), vec![RefCell::new(Counter::new("foo"))]);
+        assert_eq!(
+            app.c_store.get_counters(),
+            vec![RefCell::new(Counter::new("foo"))]
+        );
+    }
+    #[test]
+    fn test_delete_dialog() {
+        let mut app = App::default();
+        app.event_handler.simulate_key(Key::Char('d'));
+        assert_eq!(
+            app.get_mode(),
+            AppMode::from_bits(0b0000_0000_0001).unwrap()
+        );
+        app.c_store.push(Counter::new("foo"));
+        app.event_handler.simulate_key(Key::Char('d'));
+        assert_eq!(
+            app.get_mode(),
+            AppMode::from_bits(0b0000_0001_0001).unwrap()
+        );
+        app.c_store.push(Counter::new("foo"));
+        app.c_store.push(Counter::new("baz"));
+        app.c_store.push(Counter::new("bar"));
     }
 }

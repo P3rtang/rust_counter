@@ -146,13 +146,13 @@ impl CounterStore {
     pub fn len(&self) -> usize {
         self.store.len()
     }
-    pub fn to_json(&self, json_file: &str) {
+    pub fn to_json(&self, json_file: impl Into<String>) {
         let     save = serde_json::to_string(&self).expect("Could not create json data");
-        let mut file = File::create(json_file).unwrap();
+        let mut file = File::create(json_file.into()).unwrap();
         file.write_all(save.as_bytes()).unwrap();
     }
-    pub fn from_json(json_file: &str) -> Result<Self> {
-        let file = File::open(json_file);
+    pub fn from_json(json_file: impl Into<String>) -> Result<Self> {
+        let file = File::open(json_file.into());
         if file.is_err() {
             return Ok(CounterStore::default())
         }

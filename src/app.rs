@@ -203,16 +203,6 @@ impl App {
 
         while self.running {
             while self.event_handler.has_event() {
-                self.debug_info.borrow_mut().insert(
-                    DebugKey::Debug("Last Key".to_string()),
-                    format!("{:?}", self.event_handler.get_buffer()[0]),
-                );
-                if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
-                    self.settings
-                        .handle_event(&self.state, &self.event_handler)?;
-                } else {
-                    self.handle_event()?;
-                }
             }
 
             // timing the execution time of the loop and add it to the counter time
@@ -373,6 +363,7 @@ impl App {
     /// If no dialog was open when running this function nothing will happen
     pub fn close_dialog(&mut self) {
         self.state.dialog = Dialog::None;
+        self.state.clear_entry();
         self.state
             .set_mode(self.state.get_mode() & AppMode::DIALOG_CLOSE);
     }
@@ -404,6 +395,22 @@ impl App {
 
     pub fn reset_entry_state(&mut self) {
         self.state.entry_state = EntryState::default();
+    }
+
+    fn handle_events(&mut self) -> Result<(), AppError> {
+        while self.event_handler.has_event() {
+            self.debug_info.borrow_mut().insert(
+                DebugKey::Debug("Last Key".to_string()),
+                format!("{:?}", self.event_handler.get_buffer()[0]),
+            );
+            if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
+                self.settings
+                    .handle_event(&self.state, &self.event_handler)?;
+            } else {
+                self.handle_event()?;
+            }
+        }
+        Ok(())
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
@@ -757,6 +764,10 @@ impl AppState {
     fn new_entry(&mut self, default_value: impl Into<String>) {
         self.entry_state.set_field(default_value)
     }
+
+    fn clear_entry(&mut self) {
+        self.entry_state.set_field("");
+    }
 }
 
 #[cfg(test)]
@@ -773,9 +784,7 @@ mod test_app {
         app.event_handler.simulate_key(Key::Char('e'));
         app.event_handler.simulate_key(Key::Char('w'));
         app.event_handler.simulate_key(Key::Enter);
-        while app.event_handler.has_event() {
-            app.handle_event().unwrap();
-        }
+        app.handle_events().unwrap();
         assert_eq!(app.get_mode(), AppMode::from_bits(0b0000_0000_0001).unwrap());
         assert_eq!(app.c_store.get_counters(), vec![RefCell::new(Counter::new("new"))])
     }
@@ -786,6 +795,15 @@ mod test_app {
         app.handle_event().unwrap();
         app.event_handler.simulate_key(Key::Char('f'));
         app.handle_event().unwrap();
-        assert_eq!(app.state.entry_state.get_active_field(), "f")
+        assert_eq!(app.state.entry_state.get_active_field(), "f");
+        app.event_handler.simulate_key(Key::Char('o'));
+        app.event_handler.simulate_key(Key::Char('o'));
+        assert_eq!(app.state.entry_state.get_active_field(), "f");
+        app.handle_events().unwrap();
+        assert_eq!(app.state.entry_state.get_active_field(), "foo");
+        app.event_handler.simulate_key(Key::Enter);
+        app.handle_events().unwrap();
+        assert_eq!(app.state.entry_state.get_active_field(), "");
+        assert_eq!(app.c_store.get_counters(), vec![RefCell::new(Counter::new("foo"))]);
     }
 }

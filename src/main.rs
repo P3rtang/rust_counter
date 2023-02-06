@@ -5,6 +5,7 @@ use crate::app::DebugKey;
 use app::App;
 use nix::fcntl::{open, OFlag};
 use std::time::SystemTime;
+use dirs;
 
 mod app;
 mod counter;
@@ -16,10 +17,13 @@ mod settings;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
-const SAVE_FILE: &str = "data.json";
+const SAVE_FILE: &str = ".local/share/counter-tui/data.json";
 
 fn main() {
-    let store = counter::CounterStore::from_json(SAVE_FILE)
+    let home_path = dirs::home_dir().unwrap();
+    let home_dir = home_path.to_str().unwrap();
+    let save_path = format!("{}/{}", home_dir, SAVE_FILE);
+    let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");
 
     let mut app = app::App::new(store);
@@ -42,7 +46,7 @@ fn main() {
     match app.start() {
         Ok(app) => {
             let store = app.end().unwrap();
-            store.to_json(SAVE_FILE);
+            store.to_json(&save_path);
         },
         Err(e) => {
             App::default().end().unwrap();

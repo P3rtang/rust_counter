@@ -184,7 +184,7 @@ impl App {
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
 
-        self.debugging.debug(
+        self.debugging.add_debug_message(
             "dev_input_files",
             input::get_kbd_inputs()?
                 .into_iter()
@@ -224,11 +224,11 @@ impl App {
                 }
             })?;
 
-            self.debugging.debug(
+            self.debugging.add_debug_message(
                 "draw_time",
                 format!("{:?}", Instant::now() - terminal_start_time),
             );
-            self.debugging.debug(
+            self.debugging.add_debug_message(
                 "key_event",
                 format!("{:?}", self.event_handler.get_buffer()),
             );
@@ -381,7 +381,7 @@ impl App {
 
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         while self.event_handler.has_event() {
-            self.debugging.debug("last_key", format!("{:?}", self.event_handler.get_buffer()[0]));
+            self.debugging.add_debug_message("last_key", format!("{:?}", self.event_handler.get_buffer()[0]));
 
             if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
                 self.settings

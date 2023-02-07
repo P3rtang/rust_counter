@@ -6,7 +6,6 @@ use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
 use std::char::CharTryFromError;
 use std::fmt::Display;
-use std::fs::DirEntry;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

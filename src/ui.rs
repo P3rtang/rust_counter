@@ -376,11 +376,8 @@ fn draw_debug_window(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(BRIGHT_RED))
         .title("DEBUG_INFO");
-    let mut debug_message = String::new();
 
-    for (key, value) in app.debug_info.borrow().iter() {
-        debug_message.push_str(format!("{}: {:?}\n", key.to_string(), value).as_str())
-    }
+    let debug_message = app.debugging.to_string();
 
     let debug_window = Paragraph::new(debug_message).block(debug_block);
     f.render_widget(debug_window, area);

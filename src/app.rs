@@ -1,9 +1,10 @@
 use crate::counter::{Counter, CounterStore};
+use crate::debugging::DebugInfo;
 use crate::input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError};
 use crate::settings::{KeyMap, Settings};
 use crate::ui::{self, UiWidth};
 use crate::widgets::entry::EntryState;
-use crate::{settings, SAVE_FILE};
+use crate::{errplace, settings, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
 use crossterm::event::KeyModifiers;
@@ -13,9 +14,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use nix::errno::Errno;
-use std::backtrace::Backtrace;
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::HashMap;
 use std::error::Error;
 use std::io;
 use std::sync::{MutexGuard, PoisonError};
@@ -27,10 +26,10 @@ use EditingState as ES;
 
 #[derive(Debug)]
 pub enum AppError {
-    GetCounterError(Backtrace),
+    GetCounterError(String),
     GetPhaseError,
     DevIoError(String),
-    IoError,
+    IoError(String),
     SettingNotFound,
     InputThread,
     ThreadError(ThreadError),
@@ -53,13 +52,27 @@ impl Error for AppError {
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let str_ = match self {
+            AppError::GetCounterError(_) => "GetCounterError".to_string(),
+            AppError::GetPhaseError => "GetPhaseError".to_string(),
+            AppError::DevIoError(_) => "DevIoError".to_string(),
+            AppError::IoError(_) => "IoError".to_string(),
+            AppError::SettingNotFound => "SettingNotFound".to_string(),
+            AppError::InputThread => "InputThread".to_string(),
+            AppError::ThreadError(_) => "ThreadError".to_string(),
+            AppError::ImpossibleState(_) => "ImpossibleState".to_string(),
+            AppError::ScreenSize(_) => "ScreenSize".to_string(),
+            AppError::DialogAlreadyOpen(_) => "DialogAlreadyOpen".to_string(),
+            AppError::EventEmpty(_) => "EventEmpty".to_string(),
+            AppError::SettingsType(_) => "SettingsType".to_string(),
+        };
+        write!(f, "{}", str_)
     }
 }
 
 impl From<io::Error> for AppError {
-    fn from(_: io::Error) -> Self {
-        Self::IoError
+    fn from(e: io::Error) -> Self {
+        Self::IoError(format!("{}, {}", errplace!(), e))
     }
 }
 
@@ -78,25 +91,6 @@ impl From<Errno> for AppError {
 impl From<PoisonError<MutexGuard<'_, AtomicI32>>> for AppError {
     fn from(_: PoisonError<MutexGuard<'_, AtomicI32>>) -> Self {
         Self::InputThread
-    }
-}
-
-#[derive(Eq, Hash, PartialEq)]
-pub enum DebugKey {
-    Debug(String),
-    Info(String),
-    Warning(String),
-    Fatal(String),
-}
-
-impl std::fmt::Display for DebugKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DebugKey::Debug(name) => write!(f, "[DEBUG] {}", name),
-            DebugKey::Info(name) => write!(f, "[INFO] {}", name),
-            DebugKey::Warning(name) => write!(f, "[WARN] {}", name),
-            DebugKey::Fatal(name) => write!(f, "[FATAL] {}", name),
-        }
     }
 }
 
@@ -149,7 +143,7 @@ pub struct App {
     running: bool,
     cursor_pos: Option<(u16, u16)>,
     pub event_handler: EventHandler,
-    pub debug_info: RefCell<HashMap<DebugKey, String>>,
+    pub debugging: DebugInfo,
     pub settings: Settings,
     pub key_map: KeyMap,
 }
@@ -164,7 +158,7 @@ impl App {
             running: true,
             cursor_pos: None,
             event_handler: EventHandler::default(),
-            debug_info: RefCell::new(HashMap::new()),
+            debugging: DebugInfo::default(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
         }
@@ -190,8 +184,8 @@ impl App {
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
 
-        self.debug_info.borrow_mut().insert(
-            DebugKey::Debug("dev_input_files".to_string()),
+        self.debugging.debug(
+            "dev_input_files",
             input::get_kbd_inputs()?
                 .into_iter()
                 .map(|value| value + ", ")
@@ -199,7 +193,10 @@ impl App {
         );
 
         while self.running {
-            self.handle_events()?;
+            match self.handle_events() {
+                Ok(_) => {}
+                Err(e) => self.debugging.handle_error(e),
+            };
             // timing the execution time of the loop and add it to the counter time
             // only do this in counting mode
             now_time = Instant::now();
@@ -214,34 +211,25 @@ impl App {
             // draw all ui elements
             terminal.draw(|f| {
                 // TODO: factor out these unwraps make them fatal errors but clean up screen first
-                ui::draw(f, &mut self).unwrap();
+                match ui::draw(f, &mut self) {
+                    Ok(_) => {}
+                    Err(e) => self.debugging.handle_error(e),
+                }
                 // if settings are open draw on top
                 if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
                     match settings::draw_as_overlay(f, &self.settings) {
                         Ok(_) => {}
-                        Err(AppError::ScreenSize(msg)) => {
-                            self.debug_info
-                                .borrow_mut()
-                                .insert(DebugKey::Warning("SettingsDraw".to_string()), msg);
-                        }
-                        Err(_) => panic!(),
+                        Err(e) => self.debugging.handle_error(e),
                     }
                 }
             })?;
 
-            self.debug_info.borrow_mut().insert(
-                DebugKey::Debug("draw time".to_string()),
+            self.debugging.debug(
+                "draw_time",
                 format!("{:?}", Instant::now() - terminal_start_time),
             );
-
-            // if a widget alters the cursor position it will report to App
-            // we set the terminal cursor position itself here
-            if let Some(pos) = self.cursor_pos {
-                terminal.set_cursor(pos.0, pos.1)?;
-            }
-
-            self.debug_info.borrow_mut().insert(
-                DebugKey::Debug("key event".to_string()),
+            self.debugging.debug(
+                "key_event",
                 format!("{:?}", self.event_handler.get_buffer()),
             );
 
@@ -253,11 +241,11 @@ impl App {
     }
 
     pub fn get_act_counter(&self) -> Result<Ref<Counter>, AppError> {
-        let selection = self.get_list_state(0).selected().unwrap_or(0);
+        let selection = self.get_list_state(1).selected().unwrap_or(0);
         if let Some(counter) = self.c_store.get(selection) {
             Ok(counter)
         } else {
-            Err(AppError::GetCounterError(Backtrace::capture()))
+            Err(AppError::GetCounterError(errplace!()))
         }
     }
 
@@ -266,7 +254,7 @@ impl App {
         if let Some(counter) = self.c_store.get_mut(selection) {
             Ok(counter)
         } else {
-            Err(AppError::GetCounterError(Backtrace::capture()))
+            Err(AppError::GetCounterError(errplace!()))
         }
     }
 
@@ -393,10 +381,8 @@ impl App {
 
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         while self.event_handler.has_event() {
-            self.debug_info.borrow_mut().insert(
-                DebugKey::Debug("Last Key".to_string()),
-                format!("{:?}", self.event_handler.get_buffer()[0]),
-            );
+            self.debugging.debug("last_key", format!("{:?}", self.event_handler.get_buffer()[0]));
+
             if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
                 self.settings
                     .handle_event(&self.state, &self.event_handler)?;
@@ -479,7 +465,7 @@ impl App {
                 self.toggle_mode(AppMode::PHASE_SELECT)
             }
             Key::Enter => {
-                if self.get_act_counter().unwrap().get_phase_len() > 1 {
+                if self.get_act_counter()?.get_phase_len() > 1 {
                     let selected = self.get_list_state(1).selected().unwrap_or(0);
                     self.list_select(1, Some(selected));
                     self.toggle_mode(AppMode::PHASE_SELECT)
@@ -520,11 +506,6 @@ impl App {
                     Ok(_) => {
                         self.event_handler.toggle_mode();
                         self.toggle_mode(AppMode::KEYLOGGING)
-                    }
-                    Err(AppError::DevIoError(e)) => {
-                        self.debug_info
-                            .borrow_mut()
-                            .insert(DebugKey::Warning("DevInput".to_string()), e);
                     }
                     Err(e) => return Err(e),
                 };
@@ -569,9 +550,10 @@ impl App {
         match key {
             Key::Enter => {
                 if self.c_store.len() < 1 {
-                    return Err(AppError::GetCounterError(Backtrace::capture()));
+                    return Err(AppError::GetCounterError(errplace!()));
                 }
-                self.c_store.remove(self.get_list_state(0).selected().unwrap_or(0));
+                self.c_store
+                    .remove(self.get_list_state(0).selected().unwrap_or(0));
                 self.close_dialog()
             }
             Key::Esc => self.close_dialog(),
@@ -707,7 +689,7 @@ impl Default for App {
             running: true,
             cursor_pos: None,
             event_handler: EventHandler::default(),
-            debug_info: RefCell::new(HashMap::default()),
+            debugging: DebugInfo::default(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
         }
@@ -758,6 +740,21 @@ impl AppState {
     fn clear_entry(&mut self) {
         self.entry_state = EntryState::default();
     }
+}
+
+pub fn cleanup_terminal_state() -> Result<(), AppError> {
+    enable_raw_mode()?;
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend).unwrap();
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use crossterm::event::KeyCode;
-use tui::{layout::Rect, text::Text, style::Style, widgets::{WidgetState, StatefulWidget, Widget, Block}};
+use tui::{layout::Rect, text::Text, style::Style, widgets::{StatefulWidget, Widget, Block}};
 
 #[derive(Clone)]
 pub struct EntryState {
@@ -74,8 +74,6 @@ impl EntryState {
         self.cursor_pos.borrow().clone()
     }
 }
-
-impl WidgetState for EntryState {}
 
 impl Default for EntryState {
     fn default() -> Self {

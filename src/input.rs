@@ -96,20 +96,10 @@ impl DevInputFileDescriptor {
 
 pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
     let input_files = fs::read_dir("/dev/input/by-id").unwrap();
-    let process_file = |file: Result<DirEntry, io::Error>| -> Result<String, AppError> {
-        let rtn_file = file?
-            .file_name()
-            .to_str()
-            .ok_or(AppError::DevIoError(
-                "cannot read from /dev/input/".to_string(),
-            ))?
-            .to_string();
-        Ok(rtn_file)
-    };
     let files = input_files
         .into_iter()
-        .map(process_file)
-        .try_collect::<Vec<String>>()?
+        .map(|file| file.unwrap().file_name().to_str().unwrap_or("").to_string())
+        .collect::<Vec<String>>()
         .into_iter()
         .filter(|f| f.contains("-event-kbd"))
         .filter(|f| !f.contains("-if01"))

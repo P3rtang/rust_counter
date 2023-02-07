@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::exit};
+use std::{collections::HashMap, time::Instant};
 
 use crate::app::AppError;
 
@@ -20,10 +20,10 @@ pub enum DebugKey {
 impl ToString for DebugKey {
     fn to_string(&self) -> String {
         match self {
-            DebugKey::Debug(msg)   => format!("[DEBUG] {}", msg),
-            DebugKey::Info(msg)    => format!("[INFO] {}" , msg),
-            DebugKey::Warning(msg) => format!("[WARN] {}" , msg),
-            DebugKey::Fatal(msg)   => format!("[FATAL] {}", msg),
+            DebugKey::Debug(msg) => format!("[DEBUG] {}", msg),
+            DebugKey::Info(msg) => format!("[INFO] {}", msg),
+            DebugKey::Warning(msg) => format!("[WARN] {}", msg),
+            DebugKey::Fatal(msg) => format!("[FATAL] {}", msg),
         }
     }
 }
@@ -31,21 +31,33 @@ impl ToString for DebugKey {
 #[derive(Default)]
 pub struct DebugInfo {
     info: HashMap<DebugKey, DebugMessage>,
+    warning: Vec<DebugMessage>,
     window: DebugWindow,
 }
 
 impl DebugInfo {
     pub fn new() -> Self {
-        Self { info: HashMap::new(), window: DebugWindow::default() }
+        Self {
+            info: HashMap::new(),
+            warning: vec![],
+            window: DebugWindow::default(),
+        }
     }
 
     pub fn handle_error(&mut self, error: AppError) {
         let msg: DebugMessage = error.into();
         self.info.insert(msg.clone().level, msg.clone());
-        if let DebugKey::Fatal(_) = &msg.level {
-            crate::app::cleanup_terminal_state().unwrap();
-            println!("{}", msg.to_string());
-            exit(2)
+        match &msg.level {
+            DebugKey::Debug(_) => {},
+            DebugKey::Info(_) => {},
+            DebugKey::Warning(_) => {
+                self.warning.push(msg)
+            },
+            DebugKey::Fatal(_) => {
+                crate::app::cleanup_terminal_state().unwrap();
+                eprintln!("{}", msg.to_string());
+                panic!()
+            }
         }
     }
 
@@ -55,13 +67,18 @@ impl DebugInfo {
 
     pub fn add_debug_message(&mut self, key: impl Into<String>, message: impl Into<String>) {
         let key = DebugKey::Debug(key.into());
-        self.info.insert(key.clone(), DebugMessage::new(key, message));
+        self.info
+            .insert(key.clone(), DebugMessage::new(key, message));
     }
 }
 
 impl ToString for DebugInfo {
     fn to_string(&self) -> String {
-        return self.info.iter().map(|(_, msg)| msg.to_string()).collect::<String>()
+        return self
+            .info
+            .iter()
+            .map(|(_, msg)| msg.to_string())
+            .collect::<String>();
     }
 }
 
@@ -69,11 +86,16 @@ impl ToString for DebugInfo {
 struct DebugMessage {
     level: DebugKey,
     message: String,
+    time: Instant,
 }
 
 impl DebugMessage {
     fn new(level: DebugKey, message: impl Into<String>) -> Self {
-        return Self { level, message: message.into() }
+        return Self {
+            level,
+            message: message.into(),
+            time: Instant::now(),
+        };
     }
 }
 
@@ -83,9 +105,14 @@ impl From<AppError> for DebugMessage {
             AppError::GetCounterError(message) => Self {
                 level: DebugKey::Fatal(error.to_string()),
                 message: message.to_string(),
+                time: Instant::now(),
             },
             AppError::GetPhaseError => todo!(),
-            AppError::DevIoError(_) => todo!(),
+            AppError::DevIoError(msg) => Self {
+                level: DebugKey::Warning(error.to_string()),
+                message: msg.to_string(),
+                time: Instant::now(),
+            },
             AppError::IoError(_) => todo!(),
             AppError::SettingNotFound => todo!(),
             AppError::InputThread => todo!(),
@@ -110,14 +137,14 @@ struct DebugWindow {}
 
 #[cfg(test)]
 mod test_debugging {
-    use crate::app::AppError;
     use super::*;
+    use crate::app::AppError;
 
     #[test]
+    #[should_panic]
     fn test_error_into() {
         let mut debugger = DebugInfo::new();
         let error = AppError::GetCounterError(errplace!());
         debugger.handle_error(error);
-        assert_eq!(format!(""), debugger.next_message())
     }
 }

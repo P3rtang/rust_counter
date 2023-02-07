@@ -336,7 +336,7 @@ impl App {
                 self.get_opened_dialog()
             )));
         }
-        self.state.new_entry("");
+        self.state.clear_entry();
         self.toggle_mode(AppMode::DIALOG_OPEN);
         self.state.dialog = dialog;
         Ok(())
@@ -743,11 +743,8 @@ impl AppState {
 }
 
 pub fn cleanup_terminal_state() -> Result<(), AppError> {
-    enable_raw_mode()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend).unwrap();
-    // restore terminal
-    disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
@@ -815,6 +812,7 @@ mod test_app {
         );
         app.c_store.push(Counter::new("foo"));
         app.event_handler.simulate_key(Key::Char('d'));
+        app.handle_events().unwrap();
         assert_eq!(
             app.get_mode(),
             AppMode::from_bits(0b0000_0001_0001).unwrap()

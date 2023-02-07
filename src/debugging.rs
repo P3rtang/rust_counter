@@ -49,7 +49,11 @@ impl DebugInfo {
         }
     }
 
-    pub fn debug(&mut self, key: impl Into<String>, message: impl Into<String>) {
+    pub fn next_message(&self) -> String {
+        todo!()
+    }
+
+    pub fn add_debug_message(&mut self, key: impl Into<String>, message: impl Into<String>) {
         let key = DebugKey::Debug(key.into());
         self.info.insert(key.clone(), DebugMessage::new(key, message));
     }
@@ -103,3 +107,17 @@ impl ToString for DebugMessage {
 
 #[derive(Default)]
 struct DebugWindow {}
+
+#[cfg(test)]
+mod test_debugging {
+    use crate::app::AppError;
+    use super::*;
+
+    #[test]
+    fn test_error_into() {
+        let mut debugger = DebugInfo::new();
+        let error = AppError::GetCounterError(errplace!());
+        debugger.handle_error(error);
+        assert_eq!(format!(""), debugger.next_message())
+    }
+}

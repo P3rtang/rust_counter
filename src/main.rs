@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![feature(iterator_try_collect)]
 
 use app::App;
 use dirs;

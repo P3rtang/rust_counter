@@ -11,14 +11,15 @@ use tui::{
     Frame,
 };
 
-const BLUE: Color = Color::Rgb(139, 233, 253);
-const GRAY: Color = Color::Rgb(100, 114, 125);
-const MAGENTA: Color = Color::Rgb(255, 121, 198);
-const DARK_GRAY: Color = Color::Rgb(40, 42, 54);
-const GREEN: Color = Color::Rgb(80, 250, 123);
-const ORANGE: Color = Color::Rgb(255, 184, 108);
-const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
-const YELLOW: Color = Color::Rgb(241, 250, 140);
+pub const BLUE: Color = Color::Rgb(139, 233, 253);
+pub const GRAY: Color = Color::Rgb(100, 114, 125);
+pub const MAGENTA: Color = Color::Rgb(255, 121, 198);
+pub const BACKGROUND: Color = Color::Rgb(40, 42, 54);
+pub const GREEN: Color = Color::Rgb(80, 250, 123);
+pub const ORANGE: Color = Color::Rgb(255, 184, 108);
+pub const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
+pub const YELLOW: Color = Color::Rgb(241, 250, 140);
+pub const BORDER: Color = Color::Rgb(100, 114, 125);
 
 // TODO: remove this enum
 #[derive(PartialEq, Eq)]

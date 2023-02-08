@@ -1,26 +1,28 @@
-use crate::counter::{Counter, CounterStore};
-use crate::debugging::DebugInfo;
-use crate::input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError};
-use crate::settings::{KeyMap, Settings};
-use crate::ui::{self, UiWidth};
-use crate::widgets::entry::EntryState;
-use crate::{errplace, settings, SAVE_FILE};
+use crate::{
+    counter::{Counter, CounterStore},
+    debugging::DebugInfo,
+    input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError},
+    settings::{KeyMap, Settings},
+    ui::{self, UiWidth},
+};
+use crate::{errplace, settings, widgets::entry::EntryState, SAVE_FILE};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
-use crossterm::event::KeyModifiers;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{DisableMouseCapture, EnableMouseCapture, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use nix::errno::Errno;
-use std::cell::{Ref, RefCell, RefMut};
-use std::error::Error;
-use std::io;
-use std::sync::{MutexGuard, PoisonError};
-use std::thread;
-use std::time::{Duration, Instant};
-use tui::{backend::CrosstermBackend, widgets::ListState, Terminal};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    error::Error,
+    io,
+    sync::{MutexGuard, PoisonError},
+    thread,
+    time::{Duration, Instant},
+};
+use tui::{widgets::ListState, Terminal, backend::CrosstermBackend};
 use Dialog as DS;
 use EditingState as ES;
 
@@ -32,7 +34,7 @@ pub enum AppError {
     IoError(String),
     SettingNotFound,
     InputThread,
-    ThreadError(ThreadError),
+    ThreadError(String),
     ImpossibleState(String),
     ScreenSize(String),
     DialogAlreadyOpen(String),
@@ -77,8 +79,8 @@ impl From<io::Error> for AppError {
 }
 
 impl From<ThreadError> for AppError {
-    fn from(value: ThreadError) -> Self {
-        Self::ThreadError(value)
+    fn from(e: ThreadError) -> Self {
+        Self::ThreadError(format!("{}, {:?}", errplace!(), e))
     }
 }
 
@@ -381,7 +383,10 @@ impl App {
 
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         while self.event_handler.has_event() {
-            self.debugging.add_debug_message("last_key", format!("{:?}", self.event_handler.get_buffer()[0]));
+            self.debugging.add_debug_message(
+                "last_key",
+                format!("{:?}", self.event_handler.get_buffer()[0]),
+            );
 
             if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
                 self.settings
@@ -745,11 +750,7 @@ impl AppState {
 pub fn cleanup_terminal_state() -> Result<(), AppError> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend).unwrap();
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), DisableMouseCapture)?;
     terminal.show_cursor()?;
     Ok(())
 }

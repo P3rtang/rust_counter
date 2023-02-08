@@ -1,6 +1,12 @@
-use std::{collections::HashMap, time::Instant};
-
-use crate::app::AppError;
+use crate::{app::AppError, ui::ORANGE};
+use std::{collections::VecDeque, time::Instant};
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Rect},
+    style::{Color, Style},
+    widgets::{Cell, Row, Table},
+    Frame,
+};
 
 #[macro_export]
 macro_rules! errplace {
@@ -9,7 +15,7 @@ macro_rules! errplace {
     };
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DebugKey {
     Debug(String),
     Info(String),
@@ -30,29 +36,25 @@ impl ToString for DebugKey {
 
 #[derive(Default)]
 pub struct DebugInfo {
-    info: HashMap<DebugKey, DebugMessage>,
-    warning: Vec<DebugMessage>,
-    window: DebugWindow,
+    messages: Vec<DebugMessage>,
+    new_messages: VecDeque<DebugMessage>,
 }
 
 impl DebugInfo {
     pub fn new() -> Self {
         Self {
-            info: HashMap::new(),
-            warning: vec![],
-            window: DebugWindow::default(),
+            messages: vec![],
+            new_messages: VecDeque::new(),
         }
     }
 
     pub fn handle_error(&mut self, error: AppError) {
         let msg: DebugMessage = error.into();
-        self.info.insert(msg.clone().level, msg.clone());
-        match &msg.level {
-            DebugKey::Debug(_) => {},
-            DebugKey::Info(_) => {},
-            DebugKey::Warning(_) => {
-                self.warning.push(msg)
-            },
+        self.insert(msg.clone());
+        match &msg.key {
+            DebugKey::Debug(_) => {}
+            DebugKey::Info(_) => {}
+            DebugKey::Warning(_) => self.new_messages.push_back(msg),
             DebugKey::Fatal(_) => {
                 crate::app::cleanup_terminal_state().unwrap();
                 eprintln!("{}", msg.to_string());
@@ -61,30 +63,56 @@ impl DebugInfo {
         }
     }
 
-    pub fn next_message(&self) -> String {
-        todo!()
+    fn insert(&mut self, msg: DebugMessage) {
+        match self.get_key_idx(&msg.key) {
+            Some(idx) => self.messages[idx] = msg,
+            None => self.messages.push(msg),
+        }
+    }
+
+    fn get_key_idx(&self, key: &DebugKey) -> Option<usize> {
+        for idx in 0..self.messages.len() {
+            if &self.messages[idx].key == key {
+                return Some(idx);
+            }
+        }
+        return None;
+    }
+
+    fn next_message(&mut self) -> Option<DebugMessage> {
+        self.new_messages.pop_front()
     }
 
     pub fn add_debug_message(&mut self, key: impl Into<String>, message: impl Into<String>) {
         let key = DebugKey::Debug(key.into());
-        self.info
-            .insert(key.clone(), DebugMessage::new(key, message));
+        self.insert(DebugMessage::new(key, message));
+    }
+
+    fn to_table(&self, is_colored: bool) -> Table {
+        let rows = self.messages.iter().map(|msg| msg.to_row(is_colored));
+        return Table::new(rows)
+            .widths(&[
+                Constraint::Length(8),
+                Constraint::Length(7),
+                Constraint::Percentage(80),
+            ])
+            .column_spacing(2);
     }
 }
 
 impl ToString for DebugInfo {
     fn to_string(&self) -> String {
         return self
-            .info
+            .messages
             .iter()
-            .map(|(_, msg)| msg.to_string())
+            .map(|msg| msg.to_string())
             .collect::<String>();
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct DebugMessage {
-    level: DebugKey,
+    key: DebugKey,
     message: String,
     time: Instant,
 }
@@ -92,10 +120,43 @@ struct DebugMessage {
 impl DebugMessage {
     fn new(level: DebugKey, message: impl Into<String>) -> Self {
         return Self {
-            level,
+            key: level,
             message: message.into(),
             time: Instant::now(),
         };
+    }
+
+    fn to_row(&self, is_colored: bool) -> Row {
+        let cells: [Cell; 3] = match is_colored {
+            true => match self.key {
+                DebugKey::Debug(_) => [
+                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(self.key.to_string()).style(Style::default().fg(Color::Yellow)),
+                    Cell::from(self.message.to_string()),
+                ],
+                DebugKey::Info(_) => [
+                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(self.key.to_string()).style(Style::default().fg(Color::White)),
+                    Cell::from(self.message.to_string()),
+                ],
+                DebugKey::Warning(_) => [
+                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(self.key.to_string()).style(Style::default().fg(ORANGE)),
+                    Cell::from(self.message.to_string()),
+                ],
+                DebugKey::Fatal(_) => [
+                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(self.key.to_string()).style(Style::default().fg(Color::Red)),
+                    Cell::from(self.message.to_string()),
+                ],
+            },
+            false => [
+                format!("{:?}", self.time).into(),
+                self.key.to_string().into(),
+                self.message.to_string().into(),
+            ],
+        };
+        return Row::new(cells);
     }
 }
 
@@ -103,20 +164,24 @@ impl From<AppError> for DebugMessage {
     fn from(error: AppError) -> Self {
         match &error {
             AppError::GetCounterError(message) => Self {
-                level: DebugKey::Fatal(error.to_string()),
+                key: DebugKey::Fatal(error.to_string()),
                 message: message.to_string(),
                 time: Instant::now(),
             },
             AppError::GetPhaseError => todo!(),
             AppError::DevIoError(msg) => Self {
-                level: DebugKey::Warning(error.to_string()),
+                key: DebugKey::Warning(error.to_string()),
                 message: msg.to_string(),
                 time: Instant::now(),
             },
             AppError::IoError(_) => todo!(),
             AppError::SettingNotFound => todo!(),
             AppError::InputThread => todo!(),
-            AppError::ThreadError(_) => todo!(),
+            AppError::ThreadError(msg) => Self {
+                key: DebugKey::Fatal(error.to_string()),
+                message: msg.to_string(),
+                time: Instant::now(),
+            },
             AppError::ImpossibleState(_) => todo!(),
             AppError::ScreenSize(_) => todo!(),
             AppError::DialogAlreadyOpen(_) => todo!(),
@@ -128,23 +193,96 @@ impl From<AppError> for DebugMessage {
 
 impl ToString for DebugMessage {
     fn to_string(&self) -> String {
-        format!("{}: {}\n", self.level.to_string(), self.message)
+        format!("{}: {}", self.key.to_string(), self.message)
     }
 }
 
 #[derive(Default)]
-struct DebugWindow {}
+struct DebugWindow {
+    debug_info: DebugInfo,
+    style: Style,
+    is_colored: bool,
+}
+
+impl DebugWindow {
+    fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
+        let widget = self.debug_info.to_table(self.is_colored).style(self.style);
+        f.render_widget(widget, area)
+    }
+}
 
 #[cfg(test)]
 mod test_debugging {
+    use tui::{backend::TestBackend, buffer::Buffer, Terminal};
+
     use super::*;
     use crate::app::AppError;
 
     #[test]
+    fn test_error_stringify() {
+        let mut debugger = DebugInfo::new();
+        let error = AppError::DevIoError("src/debugging:180:20 `error`".to_string());
+        debugger.handle_error(error);
+        assert_eq!(
+            "[WARN] DevIoError: src/debugging:180:20 `error`".to_string(),
+            debugger.next_message().unwrap().to_string()
+        );
+    }
+    #[test]
     #[should_panic]
-    fn test_error_into() {
+    fn test_error_fatal() {
         let mut debugger = DebugInfo::new();
         let error = AppError::GetCounterError(errplace!());
         debugger.handle_error(error);
+    }
+    #[test]
+    fn test_multiple_errors() {
+        let mut debugger = DebugInfo::new();
+        let error = AppError::DevIoError(errplace!());
+        debugger.handle_error(error);
+        assert!(debugger.next_message().is_some());
+        assert!(debugger.next_message().is_none());
+        assert_eq!(1, debugger.messages.len());
+
+        let error = AppError::DevIoError(errplace!());
+        debugger.handle_error(error);
+        let error = AppError::DevIoError(errplace!());
+        debugger.handle_error(error);
+
+        assert_eq!(1, debugger.messages.len());
+        assert!(debugger.next_message().is_some());
+        assert!(debugger.next_message().is_some());
+    }
+    #[test]
+    fn test_draw_ui() {
+        let test_case = |errors: Vec<AppError>, expected| {
+            let backend = TestBackend::new(60, 10);
+            let mut terminal = Terminal::new(backend).unwrap();
+            let mut debug_window = DebugWindow::default();
+            errors
+                .into_iter()
+                .for_each(|e| debug_window.debug_info.handle_error(e));
+            assert_eq!(1, debug_window.debug_info.messages.len());
+            terminal.draw(|f| debug_window.draw(f, f.size())).unwrap();
+            terminal.backend().assert_buffer(&expected);
+        };
+        let errors = vec![AppError::DevIoError(
+            "src/debugging:180:20 `error`".to_string(),
+        )];
+        test_case(
+            errors,
+            Buffer::with_lines(vec![
+                "Instant   [WARN]   src/debugging:180:20 `error`             ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+                "                                                            ",
+            ]),
+        )
     }
 }

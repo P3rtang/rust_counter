@@ -4,7 +4,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Rect},
     style::{Color, Style},
-    widgets::{Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Row, Table},
     Frame,
 };
 
@@ -201,12 +201,20 @@ impl ToString for DebugMessage {
 struct DebugWindow {
     debug_info: DebugInfo,
     style: Style,
+    border_style: Style,
     is_colored: bool,
 }
 
 impl DebugWindow {
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect) {
-        let widget = self.debug_info.to_table(self.is_colored).style(self.style);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(self.border_style);
+        let widget = self
+            .debug_info
+            .to_table(self.is_colored)
+            .style(self.style)
+            .block(block);
         f.render_widget(widget, area)
     }
 }
@@ -272,16 +280,16 @@ mod test_debugging {
         test_case(
             errors,
             Buffer::with_lines(vec![
-                "Instant   [WARN]   src/debugging:180:20 `error`             ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
-                "                                                            ",
+                "┌──────────────────────────────────────────────────────────┐",
+                "│Instant   [WARN]   src/debugging:180:20 `error`           │",
+                "│                                                          │",
+                "│                                                          │",
+                "│                                                          │",
+                "│                                                          │",
+                "│                                                          │",
+                "│                                                          │",
+                "│                                                          │",
+                "└──────────────────────────────────────────────────────────┘",
             ]),
         )
     }

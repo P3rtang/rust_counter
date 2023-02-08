@@ -1,5 +1,5 @@
 default:
-	cargo build
+	cargo +stable build
 
 install:
 	cargo build --release --bin counter-tui
@@ -8,6 +8,7 @@ install:
 
 uninstall:
 	sudo rm /usr/local/bin/tui-counter
+	rm -r ~/.local/share/counter-tui/
 
 tests:
-	cargo test
+	cargo +stable test

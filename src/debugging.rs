@@ -1,5 +1,5 @@
 use crate::{app::AppError, ui::ORANGE};
-use std::{collections::VecDeque, time::Instant};
+use std::{collections::VecDeque, time::SystemTime};
 use tui::{
     backend::Backend,
     layout::{Constraint, Rect},
@@ -114,7 +114,7 @@ impl ToString for DebugInfo {
 struct DebugMessage {
     key: DebugKey,
     message: String,
-    time: Instant,
+    time: SystemTime,
 }
 
 impl DebugMessage {
@@ -122,36 +122,40 @@ impl DebugMessage {
         return Self {
             key: level,
             message: message.into(),
-            time: Instant::now(),
+            time: SystemTime::now(),
         };
+    }
+
+    fn set_time(&mut self, time: SystemTime) {
+        self.time = time
     }
 
     fn to_row(&self, is_colored: bool) -> Row {
         let cells: [Cell; 3] = match is_colored {
             true => match self.key {
                 DebugKey::Debug(_) => [
-                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(instant_to_string(self.time)),
                     Cell::from(self.key.to_string()).style(Style::default().fg(Color::Yellow)),
                     Cell::from(self.message.to_string()),
                 ],
                 DebugKey::Info(_) => [
-                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(instant_to_string(self.time)),
                     Cell::from(self.key.to_string()).style(Style::default().fg(Color::White)),
                     Cell::from(self.message.to_string()),
                 ],
                 DebugKey::Warning(_) => [
-                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(instant_to_string(self.time)),
                     Cell::from(self.key.to_string()).style(Style::default().fg(ORANGE)),
                     Cell::from(self.message.to_string()),
                 ],
                 DebugKey::Fatal(_) => [
-                    Cell::from(format!("{:?}", self.time)),
+                    Cell::from(instant_to_string(self.time)),
                     Cell::from(self.key.to_string()).style(Style::default().fg(Color::Red)),
                     Cell::from(self.message.to_string()),
                 ],
             },
             false => [
-                format!("{:?}", self.time).into(),
+                instant_to_string(self.time).into(),
                 self.key.to_string().into(),
                 self.message.to_string().into(),
             ],
@@ -166,13 +170,13 @@ impl From<AppError> for DebugMessage {
             AppError::GetCounterError(message) => Self {
                 key: DebugKey::Fatal(error.to_string()),
                 message: message.to_string(),
-                time: Instant::now(),
+                time: SystemTime::now(),
             },
             AppError::GetPhaseError => todo!(),
             AppError::DevIoError(msg) => Self {
                 key: DebugKey::Warning(error.to_string()),
                 message: msg.to_string(),
-                time: Instant::now(),
+                time: SystemTime::now(),
             },
             AppError::IoError(_) => todo!(),
             AppError::SettingNotFound => todo!(),
@@ -180,7 +184,7 @@ impl From<AppError> for DebugMessage {
             AppError::ThreadError(msg) => Self {
                 key: DebugKey::Fatal(error.to_string()),
                 message: msg.to_string(),
-                time: Instant::now(),
+                time: SystemTime::now(),
             },
             AppError::ImpossibleState(_) => todo!(),
             AppError::ScreenSize(_) => todo!(),
@@ -195,6 +199,17 @@ impl ToString for DebugMessage {
     fn to_string(&self) -> String {
         format!("{}: {}", self.key.to_string(), self.message)
     }
+}
+
+fn instant_to_string(instant: SystemTime) -> String {
+    let total_secs = instant
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let secs = total_secs % 60;
+    let mins = total_secs / 60 % 60;
+    let hours = total_secs / 3600 % 24;
+    format!("{:02}:{:02}:{:02}", hours, mins, secs)
 }
 
 #[derive(Default)]
@@ -221,6 +236,8 @@ impl DebugWindow {
 
 #[cfg(test)]
 mod test_debugging {
+    use std::time::Duration;
+
     use tui::{backend::TestBackend, buffer::Buffer, Terminal};
 
     use super::*;
@@ -263,17 +280,21 @@ mod test_debugging {
     }
     #[test]
     fn test_draw_ui() {
-        let test_case = |errors: Vec<AppError>, expected| {
-            let backend = TestBackend::new(60, 10);
-            let mut terminal = Terminal::new(backend).unwrap();
-            let mut debug_window = DebugWindow::default();
-            errors
-                .into_iter()
-                .for_each(|e| debug_window.debug_info.handle_error(e));
-            assert_eq!(1, debug_window.debug_info.messages.len());
-            terminal.draw(|f| debug_window.draw(f, f.size())).unwrap();
-            terminal.backend().assert_buffer(&expected);
-        };
+        let test_case =
+            |errors: Vec<AppError>, expected| {
+                let backend = TestBackend::new(60, 10);
+                let mut terminal = Terminal::new(backend).unwrap();
+                let mut debug_window = DebugWindow::default();
+                errors
+                    .into_iter()
+                    .for_each(|e| debug_window.debug_info.handle_error(e));
+                assert_eq!(1, debug_window.debug_info.messages.len());
+                debug_window.debug_info.messages.iter_mut().for_each(|msg| {
+                    msg.set_time(SystemTime::UNIX_EPOCH + Duration::from_secs(49062))
+                });
+                terminal.draw(|f| debug_window.draw(f, f.size())).unwrap();
+                terminal.backend().assert_buffer(&expected);
+            };
         let errors = vec![AppError::DevIoError(
             "src/debugging:180:20 `error`".to_string(),
         )];
@@ -281,7 +302,7 @@ mod test_debugging {
             errors,
             Buffer::with_lines(vec![
                 "┌──────────────────────────────────────────────────────────┐",
-                "│Instant   [WARN]   src/debugging:180:20 `error`           │",
+                "│13:37:42  [WARN]   src/debugging:180:20 `error`           │",
                 "│                                                          │",
                 "│                                                          │",
                 "│                                                          │",

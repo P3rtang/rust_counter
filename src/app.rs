@@ -23,7 +23,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tui::{widgets::ListState, Terminal, backend::CrosstermBackend};
-use Dialog as DS;
 use EditingState as ES;
 
 #[derive(Debug)]
@@ -447,7 +446,7 @@ impl App {
             } else {
                 match key {
                     Key::Char('q') => self.running = false,
-                    Key::Char('n') => self.open_dialog(DS::AddNew)?,
+                    Key::Char('n') => self.open_dialog(Dialog::AddNew)?,
                     _ => {}
                 }
             }
@@ -461,9 +460,9 @@ impl App {
         let len = self.c_store.len();
         match key {
             Key::Char('q') | Key::Esc => self.running = false,
-            Key::Char('n') => self.open_dialog(DS::AddNew)?,
-            Key::Char('d') => self.open_dialog(DS::Delete)?,
-            Key::Char('e') => self.open_dialog(DS::Editing(ES::Rename))?,
+            Key::Char('n') => self.open_dialog(Dialog::AddNew)?,
+            Key::Char('d') => self.open_dialog(Dialog::Delete)?,
+            Key::Char('e') => self.open_dialog(Dialog::Editing(ES::Rename))?,
             Key::Char('f') => {
                 let selected = self.get_list_state(1).selected().unwrap_or(0);
                 self.list_select(1, Some(selected));
@@ -580,7 +579,7 @@ impl App {
             Key::Enter => {
                 let name = self.get_entry_state().get_active_field().clone();
                 self.get_mut_act_counter()?.set_name(&name);
-                self.open_dialog(DS::Editing(ES::ChCount))?;
+                self.open_dialog(Dialog::Editing(ES::ChCount))?;
             }
             Key::Esc => {
                 self.close_dialog();
@@ -603,7 +602,7 @@ impl App {
                     .parse()
                     .unwrap_or_else(|_| self.get_act_counter().unwrap().get_count());
                 self.get_mut_act_counter()?.set_count(count);
-                self.open_dialog(DS::Editing(ES::ChTime))?;
+                self.open_dialog(Dialog::Editing(ES::ChTime))?;
             }
             Key::Esc => {
                 self.close_dialog();
@@ -655,9 +654,9 @@ impl App {
             Key::Char('d') if self.get_act_counter()?.get_phase_len() == 1 => {
                 self.set_mode(AppMode::SELECTION)
             }
-            Key::Char('d') => self.open_dialog(DS::Delete)?,
+            Key::Char('d') => self.open_dialog(Dialog::Delete)?,
             Key::Char('n') => self.get_mut_act_counter()?.new_phase(),
-            Key::Char('r') => self.open_dialog(DS::Editing(ES::Rename))?,
+            Key::Char('r') => self.open_dialog(Dialog::Editing(ES::Rename))?,
             Key::Up => {
                 let mut selected = self.get_list_state(1).selected().unwrap_or(0);
                 selected += len - 1;

@@ -26,11 +26,13 @@ fn main() {
     let home_path = dirs::home_dir().unwrap();
     #[cfg(target_os = "linux")]
     let home_dir = home_path.to_str().unwrap();
+    #[cfg(target_os = "linux")]
+    let save_path = format!("{}/{}", home_dir, SAVE_FILE);
 
     #[cfg(not(target_os = "linux"))]
-    let home_dir = "";
+    let save_path = "data.json";
 
-    let save_path = format!("{}/{}", home_dir, SAVE_FILE);
+    // TODO: fix the path in counterstore its still saving to a const filepath
     let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");
 

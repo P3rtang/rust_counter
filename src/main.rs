@@ -2,7 +2,6 @@
 
 use app::App;
 use dirs;
-use nix::fcntl::{open, OFlag};
 use std::time::SystemTime;
 
 mod app;
@@ -27,17 +26,7 @@ fn main() {
 
     let mut app = app::App::new(store);
 
-    let fd = match open(
-        "/dev/input/event5",
-        OFlag::O_RDONLY | OFlag::O_NONBLOCK,
-        nix::sys::stat::Mode::empty(),
-    ) {
-        Ok(f) => f,
-        Err(e) => {
-            app.debug_window.debug_info.handle_error(e.into());
-            0
-        }
-    };
+    let fd = get_fd();
     app = app.set_super_user(fd);
 
     match app.start() {
@@ -51,6 +40,24 @@ fn main() {
             panic!()
         }
     };
+}
+
+#[cfg(target_os = "linux")]
+fn get_fd() -> i32 {
+    use nix::fcntl::{open, OFlag};
+
+    let fd = open(
+        "/dev/input/event5",
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+        nix::sys::stat::Mode::empty(),
+    )
+    .unwrap_or(0);
+    return fd;
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_fd() -> i32 {
+    0
 }
 
 fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {

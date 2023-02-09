@@ -1,9 +1,6 @@
 use crossterm::event::{DisableMouseCapture, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
-use nix::fcntl::{open, OFlag};
-use nix::poll::{poll, PollFd, PollFlags};
-use nix::unistd::read;
 use std::char::CharTryFromError;
 use std::fmt::Display;
 use std::process::exit;
@@ -82,7 +79,10 @@ impl DevInputFileDescriptor {
         }
     }
 
+    #[cfg(target_os = "linux")]
     pub fn set_input(&mut self, file: &str) -> Result<(), AppError> {
+        use nix::fcntl::{OFlag, open};
+
         let fd = open(
             file,
             OFlag::O_RDONLY | OFlag::O_NONBLOCK,
@@ -237,13 +237,21 @@ impl EventHandler {
         }
     }
 
+
+    #[cfg(target_os = "linux")]
     pub fn set_kbd(&self, file: &str) -> Result<(), AppError> {
+        use nix::fcntl::{OFlag, open};
         let fd = open(
             format!("/dev/input/by-id/{}", file).as_str(),
             OFlag::O_RDONLY | OFlag::O_NONBLOCK,
             nix::sys::stat::Mode::empty(),
         )?;
         self.set_fd(fd)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn set_kbd(&self, _:&str) -> Result<(), AppError> {
+        return Ok(())
     }
 
     pub fn set_fd(&self, fd: i32) -> Result<(), AppError> {
@@ -358,7 +366,10 @@ pub struct DevInputEvent {
 }
 
 impl DevInputEvent {
+    #[cfg(target_os = "linux")]
     pub fn poll(duration: i32, fd: i32) -> Option<Self> {
+        use nix::{poll::{poll, PollFd, PollFlags}, unistd::read};
+
         let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
 
         match poll(&mut poll_fds, duration) {
@@ -379,11 +390,22 @@ impl DevInputEvent {
             Err(_e) => return None,
         }
     }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn poll(duration: i32, fd: i32) -> Option<Self> {
+        return Some(Self::default())
+    }
 }
 
 impl Display for DevInputEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl Default for DevInputEvent {
+    fn default() -> Self {
+        return Self { time: Instant::now(), type_: 0, code: 0, value: 0 }
     }
 }
 

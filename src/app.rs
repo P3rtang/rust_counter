@@ -13,7 +13,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use nix::errno::Errno;
 use std::{
     cell::{Ref, RefCell, RefMut},
     error::Error,
@@ -83,7 +82,11 @@ impl From<ThreadError> for AppError {
     }
 }
 
+#[cfg(target_os = "linux")]
+use nix::errno::Errno;
+#[cfg(target_os = "linux")]
 impl From<Errno> for AppError {
+    #[cfg(target_os = "linux")]
     fn from(e: Errno) -> Self {
         Self::DevIoError(e.to_string())
     }

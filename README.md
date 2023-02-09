@@ -16,6 +16,9 @@ Some of the major features are:
     make install
     ```
 
+- Windows
+    run the install.bat batch file
+
 - Other platforms
     ```
     cargo build --release
@@ -37,6 +40,7 @@ The keylogger bypasses this so you can use the counter in the background
   and that is by adding your user to the input group with  
   `usermod -aG input $USER`  
   but as stated above I do not recommend this as any program can now read /dev/input/ without sudo  
+
 - other platforms  
   the keylogger is not available yet on other platforms  
 

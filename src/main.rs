@@ -33,17 +33,15 @@ fn main() {
     let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");
 
-    let mut app = app::App::new(store);
+    let mut app = app::App::new(store, save_path.clone());
 
     let fd = get_fd();
     app = app.set_super_user(fd);
 
-    app.debug_window.debug_info.add_debug_message("save_loc", save_path.clone());
-
     match app.start() {
         Ok(app) => {
             let store = app.end().unwrap();
-            store.to_json(&save_path);
+            store.to_json(save_path);
         }
         Err(e) => {
             App::default().end().unwrap();

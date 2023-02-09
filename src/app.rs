@@ -5,7 +5,7 @@ use crate::{
     settings::{KeyMap, Settings},
     ui::{self, UiWidth},
 };
-use crate::{errplace, settings, widgets::entry::EntryState, SAVE_FILE};
+use crate::{errplace, settings, widgets::entry::EntryState};
 use bitflags::bitflags;
 use core::sync::atomic::AtomicI32;
 use crossterm::{
@@ -150,10 +150,11 @@ pub struct App {
     pub debug_window: DebugWindow,
     pub settings: Settings,
     pub key_map: KeyMap,
+    pub save_loc: String,
 }
 
 impl App {
-    pub fn new(counter_store: CounterStore) -> Self {
+    pub fn new(counter_store: CounterStore, save_file: impl Into<String>) -> Self {
         App {
             state: AppState::new(2),
             last_interaction: Instant::now(),
@@ -165,6 +166,7 @@ impl App {
             debug_window: DebugWindow::default().toggle_color(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
+            save_loc: save_file.into(),
         }
     }
     pub fn set_super_user(self, input_fd: i32) -> Self {
@@ -502,11 +504,11 @@ impl App {
         match key {
             key if self.key_map.key_increase_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(1);
-                self.c_store.to_json(SAVE_FILE)
+                self.c_store.to_json(&self.save_loc)
             }
             key if self.key_map.key_decrease_counter.contains(&key) => {
                 self.get_mut_act_counter()?.increase_by(-1);
-                self.c_store.to_json(SAVE_FILE)
+                self.c_store.to_json(&self.save_loc)
             }
             key if self.key_map.key_toggle_keylogger.contains(&key) => {
                 match self.event_handler.set_kbd(&self.settings.get_kbd_input()?) {
@@ -699,6 +701,7 @@ impl Default for App {
             debug_window: DebugWindow::default(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
+            save_loc: String::default(),
         }
     }
 }

@@ -8,7 +8,7 @@ install --linux:
 
 install --windows:
 	cargo build --release --bin counter-tui
-	sudo install target/release/counter-tui .
+	mv target/release/counter-tui .
 	mkdir data
 
 uninstall:

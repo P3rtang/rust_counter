@@ -19,10 +19,14 @@ mod widgets;
 const SAVE_FILE: &str = ".local/share/counter-tui/data.json";
 
 #[cfg(not(target_os = "linux"))]
-const SAVE_FILE: &str = "";
+const SAVE_FILE: &str = "data.json";
 
 fn main() {
+    #[cfg(target_os = "linux")]
     let home_path = dirs::home_dir().unwrap();
+    #[cfg(not(target_os = "linux"))]
+    let home_path = "";
+
     let home_dir = home_path.to_str().unwrap();
     let save_path = format!("{}/{}", home_dir, SAVE_FILE);
     let store = counter::CounterStore::from_json(&save_path)
@@ -32,7 +36,6 @@ fn main() {
 
     let fd = get_fd();
     app = app.set_super_user(fd);
-    app.debug_window.debug_info.add_debug_message("home_dir", format!("{:?}", home_path));
 
     match app.start() {
         Ok(app) => {

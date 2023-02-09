@@ -18,9 +18,6 @@ mod widgets;
 #[cfg(target_os = "linux")]
 const SAVE_FILE: &str = ".local/share/counter-tui/data.json";
 
-#[cfg(not(target_os = "linux"))]
-const SAVE_FILE: &str = "data.json";
-
 fn main() {
     #[cfg(target_os = "linux")]
     let home_path = dirs::home_dir().unwrap();
@@ -40,6 +37,8 @@ fn main() {
 
     let fd = get_fd();
     app = app.set_super_user(fd);
+
+    app.debug_window.debug_info.add_debug_message("save_loc", save_path.clone());
 
     match app.start() {
         Ok(app) => {

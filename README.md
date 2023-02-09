@@ -4,6 +4,8 @@ This is a simple counter app that can be run in any modern terminal emulator
 The app is mainly geared towards logging progress on shiny hunting pokemon,  
 but it should work just as well for logging anything else  
 
+this app only works on windows systems if run in windows subsystem for linux
+
 ## features
 Some of the major features are:
 - calculating odds when hunting pokemon
@@ -37,6 +39,7 @@ The keylogger bypasses this so you can use the counter in the background
   and that is by adding your user to the input group with  
   `usermod -aG input $USER`  
   but as stated above I do not recommend this as any program can now read /dev/input/ without sudo  
+
 - other platforms  
   the keylogger is not available yet on other platforms  
 

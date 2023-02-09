@@ -1,15 +1,10 @@
 default:
 	cargo +stable build
 
-install --linux:
+install:
 	cargo build --release --bin counter-tui
 	sudo install target/release/counter-tui /usr/local/bin
 	mkdir -p ~/.local/share/counter-tui/
-
-install --windows:
-	cargo build --release --bin counter-tui
-	mv target/release/counter-tui .
-	mkdir data
 
 uninstall:
 	sudo rm /usr/local/bin/tui-counter

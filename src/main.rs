@@ -15,7 +15,11 @@ mod widgets;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
+#[cfg(target_os = "linux")]
 const SAVE_FILE: &str = ".local/share/counter-tui/data.json";
+
+#[cfg(not(target_os = "linux"))]
+const SAVE_FILE: &str = "";
 
 fn main() {
     let home_path = dirs::home_dir().unwrap();

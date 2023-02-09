@@ -18,6 +18,9 @@ Some of the major features are:
     make install
     ```
 
+- Windows
+    run the install.bat batch file
+
 - Other platforms
     ```
     cargo build --release

@@ -24,10 +24,12 @@ const SAVE_FILE: &str = "data.json";
 fn main() {
     #[cfg(target_os = "linux")]
     let home_path = dirs::home_dir().unwrap();
-    #[cfg(not(target_os = "linux"))]
-    let home_path = "";
-
+    #[cfg(target_os = "linux")]
     let home_dir = home_path.to_str().unwrap();
+
+    #[cfg(not(target_os = "linux"))]
+    let home_dir = "";
+
     let save_path = format!("{}/{}", home_dir, SAVE_FILE);
     let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");

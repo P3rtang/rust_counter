@@ -32,6 +32,7 @@ fn main() {
 
     let fd = get_fd();
     app = app.set_super_user(fd);
+    app.debug_window.debug_info.add_debug_message("home_dir", format!("{:?}", home_path));
 
     match app.start() {
         Ok(app) => {

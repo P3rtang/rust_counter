@@ -6,7 +6,6 @@ use nix::poll::{poll, PollFd, PollFlags};
 use nix::unistd::read;
 use std::char::CharTryFromError;
 use std::fmt::Display;
-use std::fs::DirEntry;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -96,20 +95,10 @@ impl DevInputFileDescriptor {
 
 pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
     let input_files = fs::read_dir("/dev/input/by-id").unwrap();
-    let process_file = |file: Result<DirEntry, io::Error>| -> Result<String, AppError> {
-        let rtn_file = file?
-            .file_name()
-            .to_str()
-            .ok_or(AppError::DevIoError(
-                "cannot read from /dev/input/".to_string(),
-            ))?
-            .to_string();
-        Ok(rtn_file)
-    };
     let files = input_files
         .into_iter()
-        .map(process_file)
-        .try_collect::<Vec<String>>()?
+        .map(|file| file.unwrap().file_name().to_str().unwrap_or("").to_string())
+        .collect::<Vec<String>>()
         .into_iter()
         .filter(|f| f.contains("-event-kbd"))
         .filter(|f| !f.contains("-if01"))

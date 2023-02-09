@@ -1,18 +1,17 @@
 #![allow(dead_code)]
-#![feature(iterator_try_collect)]
-use crate::app::DebugKey;
 use app::App;
+use dirs;
 use nix::fcntl::{open, OFlag};
 use std::time::SystemTime;
-use dirs;
 
 mod app;
 mod counter;
+mod debugging;
+mod input;
+mod settings;
 mod tests;
 mod ui;
 mod widgets;
-mod input;
-mod settings;
 
 // you can freely change the name of this save file it will create an empty file if none with this
 // name exist
@@ -34,9 +33,7 @@ fn main() {
     ) {
         Ok(f) => f,
         Err(e) => {
-            app.debug_info
-                .borrow_mut()
-                .insert(DebugKey::Warning(e.to_string()), "".to_string());
+            app.debug_window.debug_info.handle_error(e.into());
             0
         }
     };
@@ -46,7 +43,7 @@ fn main() {
         Ok(app) => {
             let store = app.end().unwrap();
             store.to_json(&save_path);
-        },
+        }
         Err(e) => {
             App::default().end().unwrap();
             println!("{}", e);

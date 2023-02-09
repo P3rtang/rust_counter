@@ -11,14 +11,15 @@ use tui::{
     Frame,
 };
 
-const BLUE: Color = Color::Rgb(139, 233, 253);
-const GRAY: Color = Color::Rgb(100, 114, 125);
-const MAGENTA: Color = Color::Rgb(255, 121, 198);
-const DARK_GRAY: Color = Color::Rgb(40, 42, 54);
-const GREEN: Color = Color::Rgb(80, 250, 123);
-const ORANGE: Color = Color::Rgb(255, 184, 108);
-const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
-const YELLOW: Color = Color::Rgb(241, 250, 140);
+pub const BLUE: Color = Color::Rgb(139, 233, 253);
+pub const GRAY: Color = Color::Rgb(100, 114, 125);
+pub const MAGENTA: Color = Color::Rgb(255, 121, 198);
+pub const BACKGROUND: Color = Color::Rgb(40, 42, 54);
+pub const GREEN: Color = Color::Rgb(80, 250, 123);
+pub const ORANGE: Color = Color::Rgb(255, 184, 108);
+pub const BRIGHT_RED: Color = Color::Rgb(255, 149, 128);
+pub const YELLOW: Color = Color::Rgb(241, 250, 140);
+pub const BORDER: Color = Color::Rgb(100, 114, 125);
 
 // TODO: remove this enum
 #[derive(PartialEq, Eq)]
@@ -59,7 +60,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
             .split(f.size());
-        draw_debug_window(f, app, debug_chunks[1])?;
+        app.debug_window.draw(f, debug_chunks[1]);
         Layout::default()
             .direction(Direction::Horizontal)
             .constraints(constraints)
@@ -376,11 +377,8 @@ fn draw_debug_window(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(BRIGHT_RED))
         .title("DEBUG_INFO");
-    let mut debug_message = String::new();
 
-    for (key, value) in app.debug_info.borrow().iter() {
-        debug_message.push_str(format!("{}: {:?}\n", key.to_string(), value).as_str())
-    }
+    let debug_message = app.debug_window.debug_info.to_string();
 
     let debug_window = Paragraph::new(debug_message).block(debug_block);
     f.render_widget(debug_window, area);

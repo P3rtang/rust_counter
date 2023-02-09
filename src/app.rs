@@ -1,6 +1,6 @@
 use crate::{
     counter::{Counter, CounterStore},
-    debugging::DebugInfo,
+    debugging::DebugWindow,
     input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError},
     settings::{KeyMap, Settings},
     ui::{self, UiWidth},
@@ -25,7 +25,7 @@ use std::{
 use tui::{widgets::ListState, Terminal, backend::CrosstermBackend};
 use EditingState as ES;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AppError {
     GetCounterError(String),
     GetPhaseError,
@@ -144,7 +144,7 @@ pub struct App {
     running: bool,
     cursor_pos: Option<(u16, u16)>,
     pub event_handler: EventHandler,
-    pub debugging: DebugInfo,
+    pub debug_window: DebugWindow,
     pub settings: Settings,
     pub key_map: KeyMap,
 }
@@ -159,7 +159,7 @@ impl App {
             running: true,
             cursor_pos: None,
             event_handler: EventHandler::default(),
-            debugging: DebugInfo::default(),
+            debug_window: DebugWindow::default().toggle_color(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
         }
@@ -185,7 +185,7 @@ impl App {
         let mut previous_time = Instant::now();
         let mut now_time: Instant;
 
-        self.debugging.add_debug_message(
+        self.debug_window.debug_info.add_debug_message(
             "dev_input_files",
             input::get_kbd_inputs()?
                 .into_iter()
@@ -196,7 +196,7 @@ impl App {
         while self.running {
             match self.handle_events() {
                 Ok(_) => {}
-                Err(e) => self.debugging.handle_error(e),
+                Err(e) => self.debug_window.debug_info.handle_error(e),
             };
             // timing the execution time of the loop and add it to the counter time
             // only do this in counting mode
@@ -214,22 +214,22 @@ impl App {
                 // TODO: factor out these unwraps make them fatal errors but clean up screen first
                 match ui::draw(f, &mut self) {
                     Ok(_) => {}
-                    Err(e) => self.debugging.handle_error(e),
+                    Err(e) => self.debug_window.debug_info.handle_error(e),
                 }
                 // if settings are open draw on top
                 if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
                     match settings::draw_as_overlay(f, &self.settings) {
                         Ok(_) => {}
-                        Err(e) => self.debugging.handle_error(e),
+                        Err(e) => self.debug_window.debug_info.handle_error(e),
                     }
                 }
             })?;
 
-            self.debugging.add_debug_message(
+            self.debug_window.debug_info.add_debug_message(
                 "draw_time",
                 format!("{:?}", Instant::now() - terminal_start_time),
             );
-            self.debugging.add_debug_message(
+            self.debug_window.debug_info.add_debug_message(
                 "key_event",
                 format!("{:?}", self.event_handler.get_buffer()),
             );
@@ -382,7 +382,7 @@ impl App {
 
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         while self.event_handler.has_event() {
-            self.debugging.add_debug_message(
+            self.debug_window.debug_info.add_debug_message(
                 "last_key",
                 format!("{:?}", self.event_handler.get_buffer()[0]),
             );
@@ -693,7 +693,7 @@ impl Default for App {
             running: true,
             cursor_pos: None,
             event_handler: EventHandler::default(),
-            debugging: DebugInfo::default(),
+            debug_window: DebugWindow::default(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
         }

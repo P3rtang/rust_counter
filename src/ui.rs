@@ -60,7 +60,7 @@ pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
             .split(f.size());
-        draw_debug_window(f, app, debug_chunks[1])?;
+        app.debug_window.draw(f, debug_chunks[1]);
         Layout::default()
             .direction(Direction::Horizontal)
             .constraints(constraints)
@@ -378,7 +378,7 @@ fn draw_debug_window(
         .border_style(Style::default().fg(BRIGHT_RED))
         .title("DEBUG_INFO");
 
-    let debug_message = app.debugging.to_string();
+    let debug_message = app.debug_window.debug_info.to_string();
 
     let debug_window = Paragraph::new(debug_message).block(debug_block);
     f.render_widget(debug_window, area);

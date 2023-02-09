@@ -34,7 +34,7 @@ fn main() {
     ) {
         Ok(f) => f,
         Err(e) => {
-            app.debugging.handle_error(e.into());
+            app.debug_window.debug_info.handle_error(e.into());
             0
         }
     };

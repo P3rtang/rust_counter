@@ -93,6 +93,7 @@ impl DevInputFileDescriptor {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
     let input_files = fs::read_dir("/dev/input/by-id").unwrap();
     let files = input_files
@@ -106,6 +107,10 @@ pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
 
     Ok(files)
 }
+
+// TODO: make an apperror for platform specific features
+#[cfg(not(target_os = "linux"))]
+pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {return Ok(vec![])}
 
 pub struct EventHandler {
     mode: HandlerModeThread,

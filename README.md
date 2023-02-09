@@ -4,8 +4,6 @@ This is a simple counter app that can be run in any modern terminal emulator
 The app is mainly geared towards logging progress on shiny hunting pokemon,  
 but it should work just as well for logging anything else  
 
-this app only works on windows systems if run in windows subsystem for linux
-
 ## features
 Some of the major features are:
 - calculating odds when hunting pokemon

@@ -1,8 +1,6 @@
 #![allow(dead_code)]
-
 use app::App;
 use dirs;
-use std::time::SystemTime;
 
 mod app;
 mod counter;
@@ -13,27 +11,12 @@ mod tests;
 mod ui;
 mod widgets;
 
-// you can freely change the name of this save file it will create an empty file if none with this
-// name exist
-#[cfg(target_os = "linux")]
-const SAVE_FILE: &str = ".local/share/counter-tui/data.json";
-
 fn main() {
-    #[cfg(target_os = "linux")]
-    let home_path = dirs::home_dir().unwrap();
-    #[cfg(target_os = "linux")]
-    let home_dir = home_path.to_str().unwrap();
-    #[cfg(target_os = "linux")]
-    let save_path = format!("{}/{}", home_dir, SAVE_FILE);
-
-    #[cfg(not(target_os = "linux"))]
-    let save_path = "data.json".to_string();
-
-    // TODO: fix the path in counterstore its still saving to a const filepath
+    let save_path = get_save_location();
     let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");
 
-    let mut app = app::App::new(store, save_path.clone());
+    let mut app = App::new(store, save_path.clone());
 
     let fd = get_fd();
     app = app.set_super_user(fd);
@@ -44,8 +27,8 @@ fn main() {
             store.to_json(save_path);
         }
         Err(e) => {
-            App::default().end().unwrap();
-            println!("{}", e);
+            app::cleanup_terminal_state().unwrap();
+            eprintln!("{}", e);
             panic!()
         }
     };
@@ -64,16 +47,19 @@ fn get_fd() -> i32 {
     return fd;
 }
 
-#[cfg(not(target_os = "linux"))]
-fn get_fd() -> i32 {
-    0
+#[cfg(target_os = "linux")]
+fn get_save_location() -> String {
+    let home_path = dirs::home_dir().unwrap();
+    let home_dir = home_path.to_str().unwrap();
+    format!("{}/{}", home_dir, ".local/share/counter-tui/data.json")
 }
 
-fn timeit<F: FnMut() -> T, T>(mut f: F) -> T {
-    let start = SystemTime::now();
-    let result = f();
-    let end = SystemTime::now();
-    let duration = end.duration_since(start).unwrap();
-    println!("took {} microseconds", duration.as_micros());
-    result
+#[cfg(target_os = "windows")]
+fn get_save_location() -> String {
+    let save_path = "data.json".to_string();
+}
+
+#[cfg(target_os = "windows")]
+fn get_fd() -> i32 {
+    0
 }

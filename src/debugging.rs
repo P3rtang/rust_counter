@@ -69,7 +69,6 @@ impl DebugInfo {
             Some(idx) => self.messages[idx] = msg,
             None => self.messages.push(msg),
         }
-        // TODO: check whether this can return a None value which would cause the program to crash
         self.messages
             .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
     }

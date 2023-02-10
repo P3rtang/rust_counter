@@ -218,7 +218,6 @@ impl App {
 
             // draw all ui elements
             terminal.draw(|f| {
-                // TODO: factor out these unwraps make them fatal errors but clean up screen first
                 match ui::draw(f, &mut self) {
                     Ok(_) => {}
                     Err(e) => self.debug_window.debug_info.handle_error(e),

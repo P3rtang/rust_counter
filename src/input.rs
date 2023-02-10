@@ -3,12 +3,12 @@ use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
 use std::char::CharTryFromError;
 use std::fmt::Display;
+use std::io;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use std::io;
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
@@ -81,7 +81,7 @@ impl DevInputFileDescriptor {
 
     #[cfg(target_os = "linux")]
     pub fn set_input(&mut self, file: &str) -> Result<(), AppError> {
-        use nix::fcntl::{OFlag, open};
+        use nix::fcntl::{open, OFlag};
 
         let fd = open(
             file,
@@ -109,9 +109,10 @@ pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
     Ok(files)
 }
 
-// TODO: make an apperror for platform specific features
-#[cfg(not(target_os = "linux"))]
-pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {return Ok(vec![])}
+#[cfg(target_os = "windows")]
+pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
+    return Ok(vec![]);
+}
 
 pub struct EventHandler {
     mode: HandlerModeThread,
@@ -243,10 +244,9 @@ impl EventHandler {
         }
     }
 
-
     #[cfg(target_os = "linux")]
     pub fn set_kbd(&self, file: &str) -> Result<(), AppError> {
-        use nix::fcntl::{OFlag, open};
+        use nix::fcntl::{open, OFlag};
         let fd = open(
             format!("/dev/input/by-id/{}", file).as_str(),
             OFlag::O_RDONLY | OFlag::O_NONBLOCK,
@@ -256,8 +256,11 @@ impl EventHandler {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn set_kbd(&self, _:&str) -> Result<(), AppError> {
-        return Err(AppError::Platform(format!("Not available on {}", std::env::consts::OS)))
+    pub fn set_kbd(&self, _: &str) -> Result<(), AppError> {
+        return Err(AppError::Platform(format!(
+            "Not available on {}",
+            std::env::consts::OS
+        )));
     }
 
     pub fn set_fd(&self, fd: i32) -> Result<(), AppError> {
@@ -290,12 +293,15 @@ impl EventHandler {
     }
 
     pub fn simulate_key(&self, key: Key) {
-        self.event_stream.lock().unwrap().insert(0, Event {
-            type_: EventType::KeyEvent(key),
-            modifiers: KeyModifiers::NONE,
-            time: Instant::now(),
-            mode: HandlerMode::Terminal,
-        })
+        self.event_stream.lock().unwrap().insert(
+            0,
+            Event {
+                type_: EventType::KeyEvent(key),
+                modifiers: KeyModifiers::NONE,
+                time: Instant::now(),
+                mode: HandlerMode::Terminal,
+            },
+        )
     }
 }
 
@@ -374,7 +380,10 @@ pub struct DevInputEvent {
 impl DevInputEvent {
     #[cfg(target_os = "linux")]
     pub fn poll(duration: i32, fd: i32) -> Option<Self> {
-        use nix::{poll::{poll, PollFd, PollFlags}, unistd::read};
+        use nix::{
+            poll::{poll, PollFd, PollFlags},
+            unistd::read,
+        };
 
         let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
 
@@ -399,7 +408,7 @@ impl DevInputEvent {
 
     #[cfg(not(target_os = "linux"))]
     pub fn poll(_duration: i32, _fd: i32) -> Option<Self> {
-        return Some(Self::default())
+        return Some(Self::default());
     }
 }
 
@@ -411,7 +420,12 @@ impl Display for DevInputEvent {
 
 impl Default for DevInputEvent {
     fn default() -> Self {
-        return Self { time: Instant::now(), type_: 0, code: 0, value: 0 }
+        return Self {
+            time: Instant::now(),
+            type_: 0,
+            code: 0,
+            value: 0,
+        };
     }
 }
 
@@ -514,7 +528,7 @@ impl TryInto<char> for Key {
     fn try_into(self) -> Result<char, Self::Error> {
         match self {
             Key::Char(char_) => return Ok(char_),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }
@@ -525,7 +539,7 @@ impl Display for Key {
     }
 }
 
-#[cfg(test)] 
+#[cfg(test)]
 mod input_test {
     use super::*;
 

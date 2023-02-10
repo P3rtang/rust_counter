@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use std::{fs, io};
+use std::io;
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 
@@ -95,6 +95,7 @@ impl DevInputFileDescriptor {
 
 #[cfg(target_os = "linux")]
 pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
+    use std::fs;
     let input_files = fs::read_dir("/dev/input/by-id").unwrap();
     let files = input_files
         .into_iter()
@@ -256,7 +257,7 @@ impl EventHandler {
 
     #[cfg(not(target_os = "linux"))]
     pub fn set_kbd(&self, _:&str) -> Result<(), AppError> {
-        return Ok(())
+        return Err(AppError::Platform(format!("Not available on {}", std::env::consts::OS)))
     }
 
     pub fn set_fd(&self, fd: i32) -> Result<(), AppError> {
@@ -397,7 +398,7 @@ impl DevInputEvent {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn poll(duration: i32, fd: i32) -> Option<Self> {
+    pub fn poll(_duration: i32, _fd: i32) -> Option<Self> {
         return Some(Self::default())
     }
 }

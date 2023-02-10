@@ -38,6 +38,7 @@ pub enum AppError {
     DialogAlreadyOpen(String),
     EventEmpty(String),
     SettingsType(String),
+    Platform(String),
 }
 
 impl Error for AppError {
@@ -65,6 +66,7 @@ impl std::fmt::Display for AppError {
             AppError::DialogAlreadyOpen(_) => "DialogAlreadyOpen".to_string(),
             AppError::EventEmpty(_) => "EventEmpty".to_string(),
             AppError::SettingsType(_) => "SettingsType".to_string(),
+            AppError::Platform(_) => "Platform".to_string(),
         };
         write!(f, "{}", str_)
     }

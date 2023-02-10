@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use app::App;
-use dirs;
 
 mod app;
 mod counter;
@@ -57,6 +56,7 @@ fn get_save_location() -> String {
 #[cfg(target_os = "windows")]
 fn get_save_location() -> String {
     let save_path = "data.json".to_string();
+    save_path
 }
 
 #[cfg(target_os = "windows")]

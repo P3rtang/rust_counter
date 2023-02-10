@@ -1,5 +1,5 @@
-use chrono::{DateTime, Local};
 use crate::{app::AppError, ui::*};
+use chrono::{DateTime, Local};
 use std::collections::VecDeque;
 use tui::{
     backend::Backend,
@@ -70,11 +70,12 @@ impl DebugInfo {
             None => self.messages.push(msg),
         }
         // TODO: check whether this can return a None value which would cause the program to crash
-        self.messages.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
+        self.messages
+            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
     }
 
     fn get_key_idx(&self, key: &DebugKey) -> Option<usize> {
-        return self.messages.iter().rposition(|msg| &msg.key == key)
+        return self.messages.iter().rposition(|msg| &msg.key == key);
     }
 
     fn next_message(&mut self) -> Option<DebugMessage> {
@@ -193,6 +194,11 @@ impl From<AppError> for DebugMessage {
             AppError::DialogAlreadyOpen(_) => todo!(),
             AppError::EventEmpty(_) => todo!(),
             AppError::SettingsType(_) => todo!(),
+            AppError::Platform(msg) => Self {
+                key: DebugKey::Warning(error.to_string()),
+                message: msg.to_string(),
+                time: Local::now(),
+            },
         }
     }
 }
@@ -277,21 +283,25 @@ mod test_debugging {
     }
     #[test]
     fn test_draw_ui() {
-        let test_case =
-            |window: &DebugWindow, expected| {
-                let backend = TestBackend::new(60, 10);
-                let mut terminal = Terminal::new(backend).unwrap();
-                terminal.draw(|f| window.draw(f, f.size())).unwrap();
-                terminal.backend().assert_buffer(&expected);
-            };
+        let test_case = |window: &DebugWindow, expected| {
+            let backend = TestBackend::new(60, 10);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal.draw(|f| window.draw(f, f.size())).unwrap();
+            terminal.backend().assert_buffer(&expected);
+        };
         let mut debug_window = DebugWindow::default();
 
-        debug_window.debug_info.handle_error(AppError::DevIoError("src/debugging:180:20 `error`".to_string()));
+        debug_window.debug_info.handle_error(AppError::DevIoError(
+            "src/debugging:180:20 `error`".to_string(),
+        ));
         test_case(
             &debug_window,
             Buffer::with_lines(vec![
                 format!("┌──────────────────────────────────────────────────────────┐"),
-                format!("│{      }  [WARN]   src/debugging:180:20 `error`           │", instant_to_string(Local::now())),
+                format!(
+                    "│{      }  [WARN]   src/debugging:180:20 `error`           │",
+                    instant_to_string(Local::now())
+                ),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
@@ -303,13 +313,21 @@ mod test_debugging {
             ]),
         );
 
-        debug_window.debug_info.handle_error(AppError::ScreenSize("src/ui.rs:140:34 `screensize too small`".to_string()));
+        debug_window.debug_info.handle_error(AppError::ScreenSize(
+            "src/ui.rs:140:34 `screensize too small`".to_string(),
+        ));
         test_case(
             &debug_window,
             Buffer::with_lines(vec![
                 format!("┌──────────────────────────────────────────────────────────┐"),
-                format!("│{      }  [WARN]   src/debugging:180:20 `error`           │", instant_to_string(Local::now())),
-                format!("│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│", instant_to_string(Local::now())),
+                format!(
+                    "│{      }  [WARN]   src/debugging:180:20 `error`           │",
+                    instant_to_string(Local::now())
+                ),
+                format!(
+                    "│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│",
+                    instant_to_string(Local::now())
+                ),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
@@ -320,14 +338,26 @@ mod test_debugging {
             ]),
         );
 
-        debug_window.debug_info.add_debug_message("testing", "testing too long debug message this should not wrap");
+        debug_window.debug_info.add_debug_message(
+            "testing",
+            "testing too long debug message this should not wrap",
+        );
         test_case(
             &debug_window,
             Buffer::with_lines(vec![
                 format!("┌──────────────────────────────────────────────────────────┐"),
-                format!("│{      }  [WARN]   src/debugging:180:20 `error`           │", instant_to_string(Local::now())),
-                format!("│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│", instant_to_string(Local::now())),
-                format!("│{      }  [DEBUG]  testing too long debug message this sho│", instant_to_string(Local::now())),
+                format!(
+                    "│{      }  [WARN]   src/debugging:180:20 `error`           │",
+                    instant_to_string(Local::now())
+                ),
+                format!(
+                    "│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│",
+                    instant_to_string(Local::now())
+                ),
+                format!(
+                    "│{      }  [DEBUG]  testing too long debug message this sho│",
+                    instant_to_string(Local::now())
+                ),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
@@ -337,14 +367,25 @@ mod test_debugging {
             ]),
         );
 
-        debug_window.debug_info.handle_error(AppError::DevIoError("src/debugging:180:20 `error`".to_string()));
+        debug_window.debug_info.handle_error(AppError::DevIoError(
+            "src/debugging:180:20 `error`".to_string(),
+        ));
         test_case(
             &debug_window,
             Buffer::with_lines(vec![
                 format!("┌──────────────────────────────────────────────────────────┐"),
-                format!("│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│", instant_to_string(Local::now())),
-                format!("│{      }  [DEBUG]  testing too long debug message this sho│", instant_to_string(Local::now())),
-                format!("│{      }  [WARN]   src/debugging:180:20 `error`           │", instant_to_string(Local::now())),
+                format!(
+                    "│{      }  [INFO]   src/ui.rs:140:34 `screensize too small`│",
+                    instant_to_string(Local::now())
+                ),
+                format!(
+                    "│{      }  [DEBUG]  testing too long debug message this sho│",
+                    instant_to_string(Local::now())
+                ),
+                format!(
+                    "│{      }  [WARN]   src/debugging:180:20 `error`           │",
+                    instant_to_string(Local::now())
+                ),
                 format!("│                                                          │"),
                 format!("│                                                          │"),
                 format!("│                                                          │"),

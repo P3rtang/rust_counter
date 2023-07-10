@@ -223,9 +223,8 @@ fn draw_counter_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, are
 
 fn draw_phase_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App, area: &[Rect]) {
     let (color, title) = if !app.get_mode().intersects(AppMode::PHASE_SELECT)
-        || app.get_mode().intersects(AppMode::COUNTING)
     {
-        if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact {
+        if app.ui_size == UiWidth::Small || app.ui_size == UiWidth::Compact || app.ui_size == UiWidth::Medium {
             return;
         } else {
             (Color::White, "")

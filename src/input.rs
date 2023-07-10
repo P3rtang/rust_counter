@@ -2,11 +2,12 @@ use crossterm::event::{DisableMouseCapture, KeyCode, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
 use std::char::CharTryFromError;
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tui::backend::CrosstermBackend;
@@ -19,11 +20,18 @@ const REPEAT_RATE: Duration = Duration::from_millis(50);
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
 
-type EventStream = Arc<Mutex<Vec<Event>>>;
+type EventStream = Arc<Mutex<VecDeque<Event>>>;
 type HandlerModeThread = Arc<Mutex<AtomicU8>>;
 type ThreadRunning = Arc<Mutex<AtomicBool>>;
 
 // TODO: this file should maybe be its own module or even github project
+pub trait InputEventHandler {
+    fn init(&mut self) -> Result<(), ThreadError>;
+    fn next_event(&self) -> Option<Event>;
+    fn has_event(&self) -> bool;
+    fn get_buffer(&self) -> VecDeque<Event>;
+    fn simulate_key(&self, key: Key) -> Result<(), ThreadError>;
+}
 
 #[derive(Debug)]
 pub enum ThreadError {
@@ -37,9 +45,183 @@ impl From<PoisonError<MutexGuard<'_, AtomicBool>>> for ThreadError {
     }
 }
 
-impl From<PoisonError<MutexGuard<'_, Vec<Event>>>> for ThreadError {
-    fn from(_: PoisonError<MutexGuard<'_, Vec<Event>>>) -> Self {
+impl From<PoisonError<MutexGuard<'_, VecDeque<Event>>>> for ThreadError {
+    fn from(_: PoisonError<MutexGuard<'_, VecDeque<Event>>>) -> Self {
         Self::EventStreamLock
+    }
+}
+
+impl From<TryLockError<MutexGuard<'_, VecDeque<Event>>>> for ThreadError {
+    fn from(_: TryLockError<MutexGuard<'_, VecDeque<Event>>>) -> Self {
+        Self::EventStreamLock
+    }
+}
+
+pub struct DevInput {
+    fd: DevInputFileDescriptor,
+    stream: EventStream,
+    is_running: ThreadRunning,
+}
+
+impl DevInput {
+    fn new(fd: i32) -> Self {
+        return Self {
+            fd: DevInputFileDescriptor::new(fd),
+            stream: Arc::new(Mutex::new(VecDeque::new())),
+            is_running: Arc::new(Mutex::new(AtomicBool::new(true))),
+        };
+    }
+}
+
+impl InputEventHandler for DevInput {
+    fn init(&mut self) -> Result<(), ThreadError> {
+        let fd = self.fd.clone();
+        let stream = self.stream.clone();
+        let is_running = self.is_running.clone();
+
+        thread::spawn(move || {
+            while is_running.lock().unwrap().load(Ordering::SeqCst) {
+                if let Some(event) =
+                    DevInputEvent::poll(-1, fd.0.lock().unwrap().load(Ordering::SeqCst) as i32)
+                {
+                    stream.lock().unwrap().push_back(event.into());
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn next_event(&self) -> Option<Event> {
+        return self.stream.try_lock().ok()?.pop_front();
+    }
+
+    fn has_event(&self) -> bool {
+        return self
+            .stream
+            .try_lock()
+            .map(|l| l.len() != 0)
+            .unwrap_or(false);
+    }
+
+    fn get_buffer(&self) -> VecDeque<Event> {
+        return self
+            .stream
+            .try_lock()
+            .map(|l| l.clone())
+            .unwrap_or_default();
+    }
+
+    fn simulate_key(&self, key: Key) -> Result<(), ThreadError> {
+        let event = Event {
+            type_: EventType::KeyEvent(key),
+            modifiers: KeyModifiers::NONE,
+            time: Instant::now(),
+        };
+
+        self.stream.try_lock()?.push_back(event);
+        Ok(())
+    }
+}
+
+impl Drop for DevInput {
+    fn drop(&mut self) {
+        self.is_running.lock().unwrap().store(false, Ordering::SeqCst)
+    }
+}
+
+pub struct CrossTermInput {
+    stream: EventStream,
+    is_running: ThreadRunning
+}
+
+impl CrossTermInput {
+    fn new() -> Self {
+        Self {
+            stream: Arc::new(Mutex::new(VecDeque::new())),
+            is_running: Arc::new(Mutex::new(AtomicBool::new(true)))
+        }
+    }
+}
+
+impl InputEventHandler for CrossTermInput {
+    fn init(&mut self) -> Result<(), ThreadError> {
+        let stream = self.stream.clone();
+        let is_running = self.is_running.clone();
+
+        thread::spawn(move || {
+            while is_running.lock().unwrap().load(Ordering::SeqCst) {
+                match crossterm::event::read() {
+                    Ok(crossterm::event::Event::Key(key)) => {
+                        let event = Event {
+                            type_: EventType::KeyEvent(key.clone().into()),
+                            modifiers: key.modifiers,
+                            time: Instant::now(),
+                        };
+                        if key.code == KeyCode::Char('c')
+                            && event.modifiers.intersects(KeyModifiers::CONTROL)
+                        {
+                            end().unwrap();
+                            exit(2)
+                        }
+                        stream.lock().unwrap().push_back(event);
+                    }
+                    // TODO: integrate mouse events
+                    _ => {}
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn next_event(&self) -> Option<Event> {
+        return self.stream.try_lock().ok()?.pop_front();
+    }
+
+    fn has_event(&self) -> bool {
+        return self
+            .stream
+            .try_lock()
+            .map(|l| l.len() != 0)
+            .unwrap_or(false);
+    }
+
+    fn get_buffer(&self) -> VecDeque<Event> {
+        return self
+            .stream
+            .try_lock()
+            .map(|l| l.clone())
+            .unwrap_or_default();
+    }
+
+    fn simulate_key(&self, key: Key) -> Result<(), ThreadError> {
+        let event = Event {
+            type_: EventType::KeyEvent(key),
+            modifiers: KeyModifiers::NONE,
+            time: Instant::now(),
+        };
+
+        self.stream.try_lock()?.push_back(event);
+        Ok(())
+    }
+}
+
+impl Drop for CrossTermInput {
+    fn drop(&mut self) {
+        self.is_running.lock().unwrap().store(false, Ordering::SeqCst)
+    }
+}
+
+pub struct Input {}
+
+impl Input {
+    pub fn crossterm() -> CrossTermInput {
+        return CrossTermInput::new();
+    }
+
+    pub fn dev_input(fd: i32) -> DevInput {
+        return DevInput::new(fd);
     }
 }
 
@@ -49,34 +231,12 @@ pub enum EventType {
     MouseEvent((u16, u16)),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum HandlerMode {
-    DevInput,
-    Terminal,
-}
-
-impl From<Arc<Mutex<AtomicU8>>> for HandlerMode {
-    fn from(value: Arc<Mutex<AtomicU8>>) -> Self {
-        match value.lock().unwrap().load(Ordering::SeqCst) {
-            0 => HandlerMode::DevInput,
-            1 => HandlerMode::Terminal,
-            _ => unreachable!(),
-        }
-    }
-}
-
 #[derive(Debug, Default)]
-pub struct DevInputFileDescriptor {
-    file_descriptor: Arc<Mutex<AtomicI32>>,
-    active_file: (i32, i32),
-}
+pub struct DevInputFileDescriptor(Arc<Mutex<AtomicI32>>);
 
 impl DevInputFileDescriptor {
     fn new(fd: i32) -> Self {
-        Self {
-            file_descriptor: Arc::new(Mutex::new(AtomicI32::new(fd))),
-            active_file: (0, 0),
-        }
+        Self(Arc::new(Mutex::new(AtomicI32::new(fd))))
     }
 
     #[cfg(target_os = "linux")]
@@ -88,8 +248,14 @@ impl DevInputFileDescriptor {
             OFlag::O_RDONLY | OFlag::O_NONBLOCK,
             nix::sys::stat::Mode::empty(),
         )?;
-        self.file_descriptor.lock()?.store(fd, Ordering::SeqCst);
+        self.0.lock()?.store(fd, Ordering::SeqCst);
         Ok(())
+    }
+}
+
+impl Clone for DevInputFileDescriptor {
+    fn clone(&self) -> Self {
+        return Self(self.0.clone());
     }
 }
 
@@ -114,209 +280,13 @@ pub fn get_kbd_inputs() -> Result<Vec<String>, AppError> {
     return Ok(vec![]);
 }
 
-pub struct EventHandler {
-    mode: HandlerModeThread,
-    file_descriptor: DevInputFileDescriptor,
-    event_stream: EventStream,
-    thread_terminal: JoinHandle<()>,
-    thread_running_state: ThreadRunning,
+#[cfg(not(target_os = "linux"))]
+pub fn set_kbd(&self, _: &str) -> Result<(), AppError> {
+    return Err(AppError::Platform(format!(
+        "Not available on {}",
+        std::env::consts::OS
+    )));
 }
-
-impl EventHandler {
-    pub fn new() -> Self {
-        let mode = Arc::new(Mutex::new(AtomicU8::new(HandlerMode::Terminal as u8)));
-        let file_descriptor = DevInputFileDescriptor::default();
-        let event_stream: EventStream = Arc::new(Mutex::new(vec![]));
-        let thread_running_state = Arc::new(Mutex::new(AtomicBool::new(false)));
-        let thread_terminal = EventHandler::spawn_thread(
-            event_stream.clone(),
-            mode.clone(),
-            file_descriptor.file_descriptor.clone(),
-            thread_running_state.clone(),
-        );
-        Self {
-            mode,
-            file_descriptor,
-            event_stream,
-            thread_terminal,
-            thread_running_state,
-        }
-    }
-    fn spawn_thread(
-        event_stream: EventStream,
-        mode: HandlerModeThread,
-        fd: Arc<Mutex<AtomicI32>>,
-        thread_running_state: ThreadRunning,
-    ) -> JoinHandle<()> {
-        thread::spawn(move || {
-            while thread_running_state.lock().unwrap().load(Ordering::SeqCst) {
-                match mode.clone().into() {
-                    HandlerMode::Terminal => {
-                        match crossterm::event::read().unwrap() {
-                            crossterm::event::Event::Key(key) => {
-                                let event = Event {
-                                    type_: EventType::KeyEvent(key.clone().into()),
-                                    modifiers: key.modifiers,
-                                    time: Instant::now(),
-                                    mode: HandlerMode::Terminal,
-                                };
-                                if key.code == KeyCode::Char('c')
-                                    && event.modifiers.intersects(KeyModifiers::CONTROL)
-                                {
-                                    end().unwrap();
-                                    exit(2)
-                                }
-                                event_stream.lock().unwrap().insert(0, event);
-                            }
-                            // TODO: integrate mouse events
-                            crossterm::event::Event::Mouse(_) => {}
-                            _ => {}
-                        }
-                    }
-                    HandlerMode::DevInput => {
-                        if crossterm::event::poll(Duration::from_millis(0)).unwrap() {
-                            match crossterm::event::read().unwrap() {
-                                crossterm::event::Event::Key(key) => {
-                                    if key.code == KeyCode::Char('c')
-                                        && key.modifiers.intersects(KeyModifiers::CONTROL)
-                                    {
-                                        end().unwrap();
-                                        exit(2)
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        if let Some(event) = DevInputEvent::poll(
-                            -1,
-                            fd.lock().unwrap().load(Ordering::SeqCst) as i32,
-                        ) {
-                            event_stream.lock().unwrap().insert(0, event.into())
-                        }
-                        // TODO: use crossterm mouse events in this context
-                    }
-                }
-            }
-        })
-    }
-    pub fn toggle_mode(&self) {
-        if self
-            .file_descriptor
-            .file_descriptor
-            .lock()
-            .unwrap()
-            .load(Ordering::SeqCst)
-            == 0
-        {
-            return;
-        }
-        self.clear();
-        match self.mode.clone().into() {
-            HandlerMode::Terminal => self.mode.lock().unwrap().store(0, Ordering::SeqCst),
-            HandlerMode::DevInput => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
-        }
-    }
-    pub fn set_mode(&self, mode: HandlerMode) {
-        match mode {
-            HandlerMode::DevInput => self.mode.lock().unwrap().store(0, Ordering::SeqCst),
-            HandlerMode::Terminal => self.mode.lock().unwrap().store(1, Ordering::SeqCst),
-        }
-    }
-
-    pub fn get_buffer(&self) -> Vec<Event> {
-        return self.event_stream.lock().unwrap().clone();
-    }
-    pub fn poll(&self) -> Option<Event> {
-        if self.event_stream.lock().unwrap().len() == 0 {
-            return None;
-        } else if self.event_stream.lock().unwrap().last().unwrap().mode != self.mode.clone().into()
-        {
-            let _ = self.event_stream.lock().unwrap().pop();
-            return None;
-        }
-        return Some(self.event_stream.lock().unwrap().pop().unwrap());
-    }
-
-    pub fn has_event(&self) -> bool {
-        match self.event_stream.lock() {
-            Ok(stream) => stream.len() != 0,
-            Err(_) => false,
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn set_kbd(&self, file: &str) -> Result<(), AppError> {
-        use nix::fcntl::{open, OFlag};
-        let fd = open(
-            format!("/dev/input/by-id/{}", file).as_str(),
-            OFlag::O_RDONLY | OFlag::O_NONBLOCK,
-            nix::sys::stat::Mode::empty(),
-        )?;
-        self.set_fd(fd)
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    pub fn set_kbd(&self, _: &str) -> Result<(), AppError> {
-        return Err(AppError::Platform(format!(
-            "Not available on {}",
-            std::env::consts::OS
-        )));
-    }
-
-    pub fn set_fd(&self, fd: i32) -> Result<(), AppError> {
-        self.file_descriptor
-            .file_descriptor
-            .lock()?
-            .store(fd, Ordering::SeqCst);
-        Ok(())
-    }
-    pub fn start(&mut self) -> Result<(), ThreadError> {
-        self.thread_running_state
-            .lock()?
-            .store(true, Ordering::SeqCst);
-        self.thread_terminal = Self::spawn_thread(
-            self.event_stream.clone(),
-            self.mode.clone(),
-            self.file_descriptor.file_descriptor.clone(),
-            self.thread_running_state.clone(),
-        );
-        Ok(())
-    }
-    pub fn stop(&mut self) {
-        self.thread_running_state
-            .lock()
-            .unwrap()
-            .store(false, Ordering::SeqCst)
-    }
-    fn clear(&self) {
-        self.event_stream.lock().unwrap().clear();
-    }
-
-    pub fn simulate_key(&self, key: Key) {
-        self.event_stream.lock().unwrap().insert(
-            0,
-            Event {
-                type_: EventType::KeyEvent(key),
-                modifiers: KeyModifiers::NONE,
-                time: Instant::now(),
-                mode: HandlerMode::Terminal,
-            },
-        )
-    }
-}
-
-impl Default for EventHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for EventHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "event: {:?}", self.event_stream.lock().unwrap())
-    }
-}
-
 fn end() -> io::Result<()> {
     enable_raw_mode()?;
     let backend = CrosstermBackend::new(io::stdout());
@@ -337,7 +307,6 @@ pub struct Event {
     pub type_: EventType,
     pub modifiers: KeyModifiers,
     pub time: Instant,
-    mode: HandlerMode,
 }
 
 impl From<Key> for Event {
@@ -346,7 +315,6 @@ impl From<Key> for Event {
             type_: EventType::KeyEvent(value),
             modifiers: KeyModifiers::NONE,
             time: Instant::now(),
-            mode: HandlerMode::Terminal,
         };
     }
 }
@@ -357,7 +325,6 @@ impl From<DevInputEvent> for Event {
             type_: EventType::KeyEvent(value.code.into()),
             modifiers: KeyModifiers::NONE,
             time: Instant::now(),
-            mode: HandlerMode::DevInput,
         }
     }
 }
@@ -427,6 +394,20 @@ impl Default for DevInputEvent {
             value: 0,
         };
     }
+}
+
+pub fn get_fd(file: &str) -> i32 {
+    use nix::fcntl::{open, OFlag};
+
+    let path = format!("/dev/input/by-id/{}", file);
+
+    let fd = open(
+        path.as_str(),
+        OFlag::O_RDONLY | OFlag::O_NONBLOCK,
+        nix::sys::stat::Mode::empty(),
+    )
+    .unwrap_or(0);
+    return fd;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -501,6 +482,7 @@ impl From<u16> for Key {
     fn from(value: u16) -> Self {
         match value {
             1 => Key::Esc,
+            12 => Key::Char('-'),
             13 => Key::Char('='),
             16 => Key::Char('q'),
             28 => Key::Enter,
@@ -545,9 +527,9 @@ mod input_test {
 
     #[test]
     fn test_simulate_key() {
-        let event_handler = EventHandler::default();
+        let event_handler = CrossTermInput::new();
         event_handler.simulate_key(Key::Char('h'));
-        let key: Key = event_handler.poll().unwrap().into();
+        let key: Key = event_handler.next_event().unwrap().into();
         assert_eq!(key, Key::Char('h'));
         assert_ne!(key, Key::Enter);
         event_handler.simulate_key(Key::Char('f'));
@@ -555,7 +537,7 @@ mod input_test {
         event_handler.simulate_key(Key::Char('o'));
         let mut word = String::new();
         while event_handler.has_event() {
-            let key: Key = event_handler.poll().unwrap().into();
+            let key: Key = event_handler.next_event().unwrap().into();
             word.push(key.try_into().unwrap())
         }
         assert_eq!(word, "foo".to_string())

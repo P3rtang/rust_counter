@@ -1,5 +1,5 @@
-use super::events::WindowEvent;
 use super::ui;
+use super::{events::WindowEvent, ContentItemType};
 use crate::{
     app::AppError,
     input::{get_kbd_inputs, Event, Key},
@@ -43,11 +43,22 @@ pub trait SettingsItem: ToListItem + ToList + ToEntry + ToString {
     ) -> Result<(), AppError>;
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Copy)]
 pub enum ContentKey {
     TickRate,
     ShowMillis,
     ActKeyboard,
+}
+
+impl ContentKey {
+    fn to_content_item(self) -> Box<dyn SettingsItem> {
+        let kbds = get_kbd_inputs().map(|item| item.clone()).unwrap_or(vec![]);
+        return match self {
+            ContentKey::TickRate => Box::new(ContentItem::<u32>::new(self, 30, (1, 100))),
+            ContentKey::ShowMillis => Box::new(ContentItem::<bool>::new(self, true)),
+            ContentKey::ActKeyboard => Box::new(ContentItem::<String>::new(self, kbds)),
+        };
+    }
 }
 
 impl std::fmt::Display for ContentKey {
@@ -70,10 +81,9 @@ pub struct MainContents {
 
 impl MainContents {
     pub fn new() -> Self {
-        let tick_rate = Box::new(ContentItem::<u32>::new(ContentKey::TickRate, 40, (1, 100)));
-        let time_show_millis = Box::new(ContentItem::<bool>::new(ContentKey::ShowMillis, true));
-        let kbds = get_kbd_inputs().map(|item| item.clone()).unwrap_or(vec![]);
-        let active_kbd = Box::new(ContentItem::<String>::new(ContentKey::ActKeyboard, kbds));
+        let tick_rate = ContentKey::TickRate.to_content_item();
+        let time_show_millis = ContentKey::ShowMillis.to_content_item();
+        let active_kbd = ContentKey::ActKeyboard.to_content_item();
         let mut this = Self {
             contents: IndexMap::new(),
             main_style: Style::default().bg(ui::BACKGROUND),
@@ -160,7 +170,7 @@ impl ContentState<u32> {
     }
 }
 
-pub struct ContentItem<T> {
+pub struct ContentItem<T: ContentItemType> {
     key: ContentKey,
     state: Option<T>,
     options: Vec<T>,
@@ -360,12 +370,15 @@ impl SettingsItem for ContentItem<u32> {
 
     fn handle_event(&mut self, event: Event) -> WindowEvent {
         match event.into() {
-            Key::Char(char_) if char_.is_digit(10) => {
-                self.widget_state.entry_state.push(char_)
-            }
+            Key::Char(char_) if char_.is_digit(10) => self.widget_state.entry_state.push(char_),
             Key::Backspace => self.widget_state.entry_state.pop(),
             Key::Enter => {
-                self.state = match self.widget_state.entry_state.get_active_field().parse::<u32>() {
+                self.state = match self
+                    .widget_state
+                    .entry_state
+                    .get_active_field()
+                    .parse::<u32>()
+                {
                     Ok(num) if num >= self.options[0] && num <= self.options[1] => Some(num),
                     _ => self.state,
                 }
@@ -385,7 +398,11 @@ impl SettingsItem for ContentItem<u32> {
         border_style: Style,
     ) -> Result<(), AppError> {
         let split = Layout::default()
-            .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(1)])
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ])
             .split(area);
         let block = Block::default()
             .style(style)
@@ -395,7 +412,8 @@ impl SettingsItem for ContentItem<u32> {
         let selection = Paragraph::new(format!(
             "Current: {}  ({}-{})",
             self.state.clone().unwrap_or(self.options[0]),
-            self.options[0], self.options[1]
+            self.options[0],
+            self.options[1]
         ))
         .block(block.clone());
         f.render_widget(selection, split[0]);
@@ -406,7 +424,7 @@ impl SettingsItem for ContentItem<u32> {
     }
 }
 
-impl<T: ToString + Clone + Default> ToListItem for ContentItem<T> {
+impl<T: ContentItemType> ToListItem for ContentItem<T> {
     fn to_listitem(&self) -> ListItem {
         return ListItem::new(self.to_string());
     }
@@ -461,12 +479,13 @@ impl ToEntry for ContentItem<u32> {
             .get(1)
             .ok_or(AppError::ImpossibleState("".to_string()))?
             .to_string()
-            .len() + 1;
+            .len()
+            + 1;
         return Ok(Entry::default().field_width(field_width as u16));
     }
 }
 
-impl<T: ToString + Clone + Default> ToString for ContentItem<T> {
+impl<T: ContentItemType> ToString for ContentItem<T> {
     fn to_string(&self) -> String {
         return self.state.clone().unwrap_or_default().to_string();
     }

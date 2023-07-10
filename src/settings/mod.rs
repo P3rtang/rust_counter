@@ -1,6 +1,6 @@
 use crate::{
     app::{AppError, AppState},
-    input::{self, EventHandler, Key},
+    input::{self, InputEventHandler, Key},
 };
 pub use item::ContentKey;
 use item::MainContents;
@@ -78,7 +78,7 @@ impl Settings {
     pub fn handle_event(
         &mut self,
         app_state: &AppState,
-        event_handler: &EventHandler,
+        event_handler: &Box<dyn InputEventHandler>,
     ) -> Result<(), AppError> {
         events::handle_event(self, app_state, event_handler)
     }
@@ -116,3 +116,9 @@ pub fn draw_as_overlay(
         .split(f.size());
     settings.window.draw(f, area[0], &settings.setting_items)
 }
+
+pub trait ContentItemType: ToString + Clone + Default {}
+
+impl ContentItemType for u32 {}
+impl ContentItemType for bool {}
+impl ContentItemType for String {}

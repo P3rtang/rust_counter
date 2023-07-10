@@ -15,10 +15,7 @@ fn main() {
     let store = counter::CounterStore::from_json(&save_path)
         .expect("Could not create Counters from save file");
 
-    let mut app = App::new(store, save_path.clone());
-
-    let fd = get_fd();
-    app = app.set_super_user(fd);
+    let app = App::new(store, save_path.clone());
 
     match app.start() {
         Ok(app) => {
@@ -31,19 +28,6 @@ fn main() {
             panic!()
         }
     };
-}
-
-#[cfg(target_os = "linux")]
-fn get_fd() -> i32 {
-    use nix::fcntl::{open, OFlag};
-
-    let fd = open(
-        "/dev/input/event5",
-        OFlag::O_RDONLY | OFlag::O_NONBLOCK,
-        nix::sys::stat::Mode::empty(),
-    )
-    .unwrap_or(0);
-    return fd;
 }
 
 #[cfg(target_os = "linux")]

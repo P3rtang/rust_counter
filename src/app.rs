@@ -1,7 +1,7 @@
 use crate::{
     counter::{Counter, CounterStore},
     debugging::DebugWindow,
-    input::{self, EventHandler, EventType, HandlerMode, Key, ThreadError},
+    input::{self, InputEventHandler, EventType, Key, ThreadError, Input},
     settings::{KeyMap, Settings},
     ui::{self, UiWidth},
 };
@@ -148,7 +148,7 @@ pub struct App {
     last_interaction: Instant,
     running: bool,
     cursor_pos: Option<(u16, u16)>,
-    pub event_handler: EventHandler,
+    pub event_handler: Box<dyn InputEventHandler>,
     pub debug_window: DebugWindow,
     pub settings: Settings,
     pub key_map: KeyMap,
@@ -164,17 +164,14 @@ impl App {
             ui_size: UiWidth::Big,
             running: true,
             cursor_pos: None,
-            event_handler: EventHandler::default(),
+            event_handler: Box::new(Input::crossterm()),
             debug_window: DebugWindow::default().toggle_color(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
             save_loc: save_file.into(),
         }
     }
-    pub fn set_super_user(self, input_fd: i32) -> Self {
-        self.event_handler.set_fd(input_fd).unwrap();
-        self
-    }
+
     pub fn start(mut self) -> Result<App, AppError> {
         // setup terminal
         enable_raw_mode()?;
@@ -183,7 +180,7 @@ impl App {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        self.event_handler.start()?;
+        self.event_handler.init()?;
         // update the settings menu with the correct infomation
         self.settings.load_keyboards()?;
 
@@ -235,6 +232,7 @@ impl App {
                 "draw_time",
                 format!("{:?}", Instant::now() - terminal_start_time),
             );
+
             self.debug_window.debug_info.add_debug_message(
                 "key_event",
                 format!("{:?}", self.event_handler.get_buffer()),
@@ -390,7 +388,7 @@ impl App {
         while self.event_handler.has_event() {
             self.debug_window.debug_info.add_debug_message(
                 "last_key",
-                format!("{:?}", self.event_handler.get_buffer()[0]),
+                format!("{:?}", self.event_handler.get_buffer().front()),
             );
 
             if self.get_mode().intersects(AppMode::SETTINGS_OPEN) {
@@ -404,11 +402,12 @@ impl App {
     }
 
     fn handle_event(&mut self) -> Result<(), AppError> {
-        let event = if let Some(event) = self.event_handler.poll() {
+        let event = if let Some(event) = self.event_handler.next_event() {
             event
         } else {
             return Ok(());
         };
+
         let key = if let EventType::KeyEvent(key) = event.clone().type_ {
             key
         } else {
@@ -512,16 +511,19 @@ impl App {
                 self.c_store.to_json(&self.save_loc)
             }
             key if self.key_map.key_toggle_keylogger.contains(&key) => {
-                match self.event_handler.set_kbd(&self.settings.get_kbd_input()?) {
-                    Ok(_) => {
-                        self.event_handler.toggle_mode();
-                        self.toggle_mode(AppMode::KEYLOGGING)
-                    }
-                    Err(e) => return Err(e),
-                };
+                if self.get_mode().intersects(AppMode::KEYLOGGING) {
+                    self.event_handler = Box::new(Input::crossterm());
+                    self.event_handler.init()?;
+                } else {
+                    self.event_handler = Box::new(Input::dev_input(input::get_fd(&self.settings.get_kbd_input()?)));
+                    self.event_handler.init()?;
+                }
+                self.toggle_mode(AppMode::KEYLOGGING)
             }
             Key::Char('q') | Key::Esc => {
-                self.event_handler.set_mode(HandlerMode::Terminal);
+                self.event_handler = Box::new(Input::crossterm());
+                self.event_handler.init()?;
+
                 if self.get_mode().intersects(AppMode::KEYLOGGING) {
                     self.toggle_mode(AppMode::KEYLOGGING)
                 }
@@ -698,7 +700,7 @@ impl Default for App {
             last_interaction: Instant::now(),
             running: true,
             cursor_pos: None,
-            event_handler: EventHandler::default(),
+            event_handler: Box::new(Input::crossterm()),
             debug_window: DebugWindow::default(),
             settings: Settings::new(),
             key_map: KeyMap::default(),
@@ -765,19 +767,19 @@ pub fn cleanup_terminal_state() -> Result<(), AppError> {
 mod test_app {
     use super::*;
     #[test]
-    fn test_input_handling() {
+    fn test_input_handling() -> Result<(), ThreadError> {
         let mut app = App::default();
         assert!(app.handle_event().is_ok());
-        app.event_handler.simulate_key(Key::Char('n'));
+        app.event_handler.simulate_key(Key::Char('n'))?;
         app.handle_event().unwrap();
         assert_eq!(
             app.get_mode(),
             AppMode::from_bits(0b0000_0001_0001).unwrap()
         );
-        app.event_handler.simulate_key(Key::Char('n'));
-        app.event_handler.simulate_key(Key::Char('e'));
-        app.event_handler.simulate_key(Key::Char('w'));
-        app.event_handler.simulate_key(Key::Enter);
+        app.event_handler.simulate_key(Key::Char('n'))?;
+        app.event_handler.simulate_key(Key::Char('e'))?;
+        app.event_handler.simulate_key(Key::Char('w'))?;
+        app.event_handler.simulate_key(Key::Enter)?;
         app.handle_events().unwrap();
         assert_eq!(
             app.get_mode(),
@@ -786,39 +788,43 @@ mod test_app {
         assert_eq!(
             app.c_store.get_counters(),
             vec![RefCell::new(Counter::new("new"))]
-        )
+        );
+
+        Ok(())
     }
     #[test]
-    fn test_new_counter_dialog() {
+    fn test_new_counter_dialog() -> Result<(), ThreadError> {
         let mut app = App::default();
-        app.event_handler.simulate_key(Key::Char('n'));
+        app.event_handler.simulate_key(Key::Char('n'))?;
         app.handle_event().unwrap();
-        app.event_handler.simulate_key(Key::Char('f'));
+        app.event_handler.simulate_key(Key::Char('f'))?;
         app.handle_event().unwrap();
         assert_eq!(app.state.entry_state.get_active_field(), "f");
-        app.event_handler.simulate_key(Key::Char('o'));
-        app.event_handler.simulate_key(Key::Char('o'));
+        app.event_handler.simulate_key(Key::Char('o'))?;
+        app.event_handler.simulate_key(Key::Char('o'))?;
         assert_eq!(app.state.entry_state.get_active_field(), "f");
         app.handle_events().unwrap();
         assert_eq!(app.state.entry_state.get_active_field(), "foo");
-        app.event_handler.simulate_key(Key::Enter);
+        app.event_handler.simulate_key(Key::Enter)?;
         app.handle_events().unwrap();
         assert_eq!(app.state.entry_state.get_active_field(), "");
         assert_eq!(
             app.c_store.get_counters(),
             vec![RefCell::new(Counter::new("foo"))]
         );
+
+        Ok(())
     }
     #[test]
-    fn test_delete_dialog() {
+    fn test_delete_dialog() -> Result<(), ThreadError> {
         let mut app = App::default();
-        app.event_handler.simulate_key(Key::Char('d'));
+        app.event_handler.simulate_key(Key::Char('d'))?;
         assert_eq!(
             app.get_mode(),
             AppMode::from_bits(0b0000_0000_0001).unwrap()
         );
         app.c_store.push(Counter::new("foo"));
-        app.event_handler.simulate_key(Key::Char('d'));
+        app.event_handler.simulate_key(Key::Char('d'))?;
         app.handle_events().unwrap();
         assert_eq!(
             app.get_mode(),
@@ -827,5 +833,7 @@ mod test_app {
         app.c_store.push(Counter::new("foo"));
         app.c_store.push(Counter::new("baz"));
         app.c_store.push(Counter::new("bar"));
+
+        Ok(())
     }
 }

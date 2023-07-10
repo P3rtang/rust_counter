@@ -2,7 +2,7 @@ use crate::input::Event;
 use crate::settings::Settings;
 use crate::{
     app::{AppError, AppMode, AppState},
-    input::{EventHandler, EventType, Key},
+    input::{InputEventHandler, EventType, Key},
 };
 use crossterm::event::KeyModifiers;
 use super::ui::WindowState;
@@ -15,10 +15,10 @@ pub enum WindowEvent {
 pub fn handle_event(
     settings: &mut Settings,
     app_state: &AppState,
-    event_handler: &EventHandler,
+    event_handler: &Box<dyn InputEventHandler>,
 ) -> Result<(), AppError> {
     // get event and key from the event handler module
-    let event = if let Some(event) = event_handler.poll() {
+    let event = if let Some(event) = event_handler.next_event() {
         event
     } else {
         return Err(AppError::EventEmpty("".to_string()));
